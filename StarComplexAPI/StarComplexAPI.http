@@ -1,0 +1,22 @@
+@StarComplexAPI_HostAddress = http://127.0.0.1:5126
+
+### تجربة تسجيل دخول موظف (مثال)
+POST {{StarComplexAPI_HostAddress}}/api/Auth/employee-login
+Content-Type: application/json
+
+{
+  "fullName": "اسم الموظف الثلاثي",
+  "employeeCode": "EMP123"
+}
+
+### -------------------------------------------
+
+### جلب فواتير وحدة معينة
+GET {{StarComplexAPI_HostAddress}}/api/Bills/GetUnitBills/1
+Accept: application/json
+
+### -------------------------------------------
+
+### جلب سجل المدفوعات
+GET {{StarComplexAPI_HostAddress}}/api/Bills/GetUnitPayments/1
+Accept: application/json

@@ -1,0 +1,1138 @@
+﻿<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>بوابة الأمن — مجمع نجمة بغداد</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #080C12;
+            --surface: #0E1620;
+            --panel: #141D2B;
+            --card: #1A2535;
+            --border: #243044;
+            --gold: #C9963A;
+            --gold-dim: rgba(201,150,58,.15);
+            --gold-glow: rgba(201,150,58,.35);
+            --green: #22C55E;
+            --green-dim: rgba(34,197,94,.12);
+            --red: #EF4444;
+            --red-dim: rgba(239,68,68,.12);
+            --amber: #F59E0B;
+            --blue: #3B82F6;
+            --text: #E2EAF4;
+            --muted: #5E7294;
+            --faint: #253046;
+            --maroon: #7B1D2A;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            font-family: 'Tajawal', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+            body::before {
+                content: '';
+                position: fixed;
+                inset: 0;
+                background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);
+                pointer-events: none;
+                z-index: 0;
+            }
+
+        /* ══ TOP BAR ══ */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 20px;
+            height: 62px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--gold);
+            box-shadow: 0 0 30px var(--gold-glow);
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, var(--maroon), #4A0F17);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .logo-texts {
+            flex-shrink: 0;
+        }
+
+        .logo-title {
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .logo-sub {
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        .topbar-clock {
+            flex: 1;
+            text-align: center;
+        }
+
+        .clock-time {
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--gold);
+            letter-spacing: 2px;
+            text-shadow: 0 0 16px var(--gold-glow);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .clock-date {
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        .period-badge {
+            padding: 4px 12px;
+            background: rgba(245,158,11,.1);
+            border: 1px solid rgba(245,158,11,.3);
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--amber);
+            flex-shrink: 0;
+        }
+
+        .employee-badge {
+            padding: 4px 12px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 11px;
+            color: var(--muted);
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* ══ CONTENT ══ */
+        .content {
+            max-width: 520px;
+            margin: 0 auto;
+            padding: 20px 16px 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ══ VISIT CARD ══ */
+        .visit-card {
+            background: var(--card);
+            border: 1px solid var(--gold);
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 0 20px var(--gold-dim);
+            animation: fadeIn .4s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        .visit-card-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--gold);
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .visit-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 9px 0;
+            border-bottom: 1px solid var(--faint);
+        }
+
+            .visit-row:last-of-type {
+                border-bottom: none;
+            }
+
+        .visit-label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .visit-value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+            .visit-value.gold {
+                color: var(--gold);
+            }
+
+            .visit-value.green {
+                color: var(--green);
+            }
+
+            .visit-value.red {
+                color: var(--red);
+            }
+
+            .visit-value.amber {
+                color: var(--amber);
+            }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .pill-pending {
+            background: rgba(245,158,11,.15);
+            color: var(--amber);
+            border: 1px solid rgba(245,158,11,.35);
+        }
+
+        .pill-accepted {
+            background: var(--green-dim);
+            color: var(--green);
+            border: 1px solid rgba(34,197,94,.35);
+        }
+
+        .pill-rejected {
+            background: var(--red-dim);
+            color: var(--red);
+            border: 1px solid rgba(239,68,68,.35);
+        }
+
+        .pill-inside {
+            background: rgba(59,130,246,.12);
+            color: var(--blue);
+            border: 1px solid rgba(59,130,246,.35);
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .dot-pulse {
+            animation: dotPulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes dotPulse {
+            0%,100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .25
+            }
+        }
+
+        /* ══ ACTION BUTTONS (قبول / رفض) ══ */
+        .action-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .btn-accept, .btn-reject {
+            height: 50px;
+            border: none;
+            border-radius: 12px;
+            font-family: 'Tajawal', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: .2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+        }
+
+        .btn-accept {
+            background: var(--green);
+            color: #000;
+            box-shadow: 0 0 18px rgba(34,197,94,.3);
+        }
+
+            .btn-accept:hover:not(:disabled) {
+                background: #16A34A;
+                box-shadow: 0 0 28px rgba(34,197,94,.5);
+            }
+
+            .btn-accept:disabled {
+                opacity: .4;
+                cursor: not-allowed;
+            }
+
+        .btn-reject {
+            background: var(--red);
+            color: #fff;
+            box-shadow: 0 0 18px rgba(239,68,68,.3);
+        }
+
+            .btn-reject:hover:not(:disabled) {
+                background: #DC2626;
+                box-shadow: 0 0 28px rgba(239,68,68,.5);
+            }
+
+            .btn-reject:disabled {
+                opacity: .4;
+                cursor: not-allowed;
+            }
+
+        .action-msg {
+            margin-top: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            text-align: center;
+            display: none;
+            padding: 10px;
+            border-radius: 10px;
+        }
+
+            .action-msg.ok {
+                background: var(--green-dim);
+                color: var(--green);
+            }
+
+            .action-msg.err {
+                background: var(--red-dim);
+                color: var(--red);
+            }
+
+        /* ══ LOADING STATE ══ */
+        .loading-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 40px 20px;
+            text-align: center;
+            display: none;
+        }
+
+        .loader {
+            width: 32px;
+            height: 32px;
+            margin: 0 auto 14px;
+            border: 3px solid rgba(255,255,255,.1);
+            border-top-color: var(--gold);
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        .loading-text {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        /* ══ ERROR STATE ══ */
+        .error-card {
+            background: var(--red-dim);
+            border: 1px solid rgba(239,68,68,.35);
+            border-radius: 18px;
+            padding: 24px 20px;
+            text-align: center;
+            display: none;
+        }
+
+        .error-icon {
+            font-size: 36px;
+            margin-bottom: 8px;
+        }
+
+        .error-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--red);
+        }
+
+        .error-sub {
+            font-size: 12px;
+            color: rgba(255,255,255,.5);
+            margin-top: 4px;
+        }
+
+        /* ══ REPORT CARD ══ */
+        .report-card {
+            background: var(--card);
+            border: 1px solid var(--amber);
+            border-radius: 18px;
+            padding: 20px;
+        }
+
+        .report-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--amber);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #reportNotes {
+            width: 100%;
+            height: 88px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: 'Tajawal', sans-serif;
+            font-size: 13px;
+            padding: 10px 12px;
+            resize: none;
+            outline: none;
+            transition: .2s;
+        }
+
+            #reportNotes:focus {
+                border-color: var(--amber);
+                box-shadow: 0 0 0 3px rgba(245,158,11,.12);
+            }
+
+            #reportNotes::placeholder {
+                color: var(--muted);
+            }
+
+        .severity-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin: 10px 0;
+        }
+
+        .sev-btn {
+            height: 36px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            font-family: 'Tajawal', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: .2s;
+            opacity: .4;
+        }
+
+            .sev-btn.active {
+                opacity: 1;
+            }
+
+        .sev-info {
+            background: rgba(59,130,246,.15);
+            color: var(--blue);
+            border-color: rgba(59,130,246,.35);
+        }
+
+        .sev-warn {
+            background: rgba(245,158,11,.15);
+            color: var(--amber);
+            border-color: rgba(245,158,11,.35);
+        }
+
+        .sev-danger {
+            background: rgba(239,68,68,.15);
+            color: var(--red);
+            border-color: rgba(239,68,68,.35);
+        }
+
+        .btn-submit-report {
+            width: 100%;
+            height: 46px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #C9963A, #A67828);
+            color: #fff;
+            font-family: 'Tajawal', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: .2s;
+            box-shadow: 0 0 14px var(--gold-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+        }
+
+            .btn-submit-report:hover {
+                box-shadow: 0 0 24px var(--gold-glow);
+                transform: translateY(-1px);
+            }
+
+        #reportMsg {
+            font-size: 12px;
+            margin-top: 8px;
+            display: none;
+            text-align: center;
+            font-weight: 700;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+            #reportMsg.ok {
+                background: var(--green-dim);
+                color: var(--green);
+            }
+
+            #reportMsg.err {
+                background: var(--red-dim);
+                color: var(--red);
+            }
+
+        /* ══ LOGIN MODAL ══ */
+        .overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.8);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(6px);
+            padding: 16px;
+        }
+
+            .overlay.active {
+                display: flex;
+            }
+
+        .modal {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px;
+            width: 100%;
+            max-width: 400px;
+            animation: slideUp .35s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(20px);
+                opacity: 0
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1
+            }
+        }
+
+        .modal-title {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .modal-sub {
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 18px;
+        }
+
+        .field-label {
+            font-size: 11px;
+            color: var(--muted);
+            font-weight: 700;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .field-wrap {
+            margin-bottom: 12px;
+        }
+
+        .input-field {
+            width: 100%;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0 12px;
+            height: 44px;
+            color: var(--text);
+            font-family: 'Tajawal', sans-serif;
+            font-size: 14px;
+            outline: none;
+            transition: .2s;
+        }
+
+            .input-field:focus {
+                border-color: var(--gold);
+                box-shadow: 0 0 0 3px var(--gold-dim);
+            }
+
+            .input-field::placeholder {
+                color: var(--muted);
+            }
+
+        .modal-error {
+            font-size: 12px;
+            color: var(--red);
+            margin-top: 8px;
+            display: none;
+            text-align: center;
+        }
+
+        .btn-confirm {
+            width: 100%;
+            height: 46px;
+            background: linear-gradient(135deg, #C9963A, #A67828);
+            border: none;
+            border-radius: 12px;
+            color: #fff;
+            font-family: 'Tajawal', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 16px;
+            box-shadow: 0 0 14px var(--gold-dim);
+            transition: .2s;
+        }
+
+            .btn-confirm:hover {
+                box-shadow: 0 0 24px var(--gold-glow);
+            }
+
+        /* ══ AUTO-LOGIN BAR ══ */
+        .auto-bar {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            background: rgba(34,197,94,.08);
+            border: 1px solid rgba(34,197,94,.25);
+            border-radius: 10px;
+            font-size: 12px;
+            color: var(--green);
+        }
+
+            .auto-bar.visible {
+                display: flex;
+            }
+
+        .auto-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: dotPulse 1s infinite;
+        }
+
+        /* ══ TOAST ══ */
+        .toast-wrap {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 300;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .toast {
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            animation: toastIn .35s cubic-bezier(.34,1.56,.64,1);
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        .toast-success {
+            background: var(--green);
+            color: #000;
+        }
+
+        .toast-error {
+            background: var(--red);
+            color: #fff;
+        }
+
+        .toast-info {
+            background: var(--gold);
+            color: #000;
+        }
+
+        @keyframes toastIn {
+            from {
+                transform: translateY(14px);
+                opacity: 0
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ══ TOP BAR ══ -->
+    <header class="topbar">
+        <div class="logo-icon">🛡️</div>
+        <div class="logo-texts">
+            <div class="logo-title">بوابة الأمن</div>
+            <div class="logo-sub">مجمع نجمة بغداد</div>
+        </div>
+        <div class="topbar-clock">
+            <div class="clock-time" id="clock">00:00:00</div>
+            <div class="clock-date" id="dateLabel">—</div>
+        </div>
+        <div class="period-badge" id="periodBadge">☀️ صباحية</div>
+        <div class="employee-badge" id="empBadge">👤 —</div>
+    </header>
+
+    <!-- ══ CONTENT ══ -->
+    <div class="content">
+
+        <!-- حالة التحميل -->
+        <div class="loading-card" id="loadingCard">
+            <div class="loader"></div>
+            <div class="loading-text">جارٍ تحميل بيانات الزيارة…</div>
+        </div>
+
+        <!-- حالة الخطأ -->
+        <div class="error-card" id="errorCard">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title" id="errorTitle">تعذر تحميل البيانات</div>
+            <div class="error-sub" id="errorSub">تحقق من الاتصال أو صحة رابط التصريح</div>
+        </div>
+
+        <!-- ══ بيانات الزيارة ══ -->
+        <div class="visit-card" id="visitCard" style="display:none">
+            <div class="visit-card-title">📋 بيانات الزيارة</div>
+
+            <div class="visit-row">
+                <span class="visit-label">اسم الزائر</span>
+                <span class="visit-value" id="vName">—</span>
+            </div>
+            <div class="visit-row">
+                <span class="visit-label">نوع الزيارة</span>
+                <span class="visit-value" id="vType">—</span>
+            </div>
+            <div class="visit-row">
+                <span class="visit-label">رقم الوحدة</span>
+                <span class="visit-value gold" id="vUnit">—</span>
+            </div>
+            <div class="visit-row">
+                <span class="visit-label">رقم اللوحة</span>
+                <span class="visit-value" id="vCar">—</span>
+            </div>
+            <div class="visit-row">
+                <span class="visit-label">صالح حتى</span>
+                <span class="visit-value" id="vExpiry">—</span>
+            </div>
+            <div class="visit-row">
+                <span class="visit-label">الحالة الحالية</span>
+                <span id="vStatusWrap">—</span>
+            </div>
+
+            <!-- أزرار القبول / الرفض -->
+            <div class="action-row" id="actionRow">
+                <button class="btn-accept" id="btnAccept" onclick="doAction('accept')">
+                    ✅ قبول الدخول
+                </button>
+                <button class="btn-reject" id="btnReject" onclick="doAction('reject')">
+                    🚫 رفض الدخول
+                </button>
+            </div>
+            <div class="action-msg" id="actionMsg"></div>
+        </div>
+
+        <!-- ══ إرسال بلاغ ══ -->
+        <div class="report-card" id="reportSection" style="display:none">
+            <div class="report-title">📋 إرسال بلاغ أمني</div>
+            <textarea id="reportNotes" placeholder="اكتب تفاصيل البلاغ أو الملاحظة الأمنية…"></textarea>
+            <div class="severity-row">
+                <button class="sev-btn sev-info" id="sevInfo" onclick="setSev('INFO')">معلومة</button>
+                <button class="sev-btn sev-warn active" id="sevWarn" onclick="setSev('WARNING')">⚠️ تحذير</button>
+                <button class="sev-btn sev-danger" id="sevDanger" onclick="setSev('REJECTED')">🚨 خطر</button>
+            </div>
+            <button class="btn-submit-report" onclick="submitReport()">
+                📤 إرسال البلاغ
+            </button>
+            <div id="reportMsg"></div>
+        </div>
+
+    </div>
+
+    <!-- ══ LOGIN MODAL ══ -->
+    <div class="overlay active" id="loginOverlay">
+        <div class="modal">
+            <div class="modal-title">🛡️ تسجيل دخول الأمن</div>
+            <div class="modal-sub">أدخل بياناتك كما هي مسجَّلة في النظام</div>
+
+            <div class="auto-bar" id="autoBar">
+                <div class="auto-dot"></div>
+                <span id="autoBarText">جارٍ تسجيل الدخول تلقائياً…</span>
+            </div>
+
+            <div class="field-wrap">
+                <label class="field-label">الاسم الثلاثي الكامل</label>
+                <input class="input-field" id="empName" placeholder="مثال: محمد أحمد علي">
+            </div>
+            <div class="field-wrap">
+                <label class="field-label">رمز الموظف</label>
+                <input class="input-field" id="empCode" placeholder="أدخل الرمز…"
+                       onkeydown="if(event.key==='Enter') login()">
+            </div>
+            <div class="modal-error" id="loginErr">بيانات الموظف غير صحيحة</div>
+            <button class="btn-confirm" onclick="login()">
+                <span id="loginBtnTx">تسجيل الدخول</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="toast-wrap" id="toastWrap"></div>
+
+    <script>
+// ══════════════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════════════
+const PAGE_URL  = new URL(location.href);
+const BASE      = PAGE_URL.origin + '/api/Security';
+
+// استخراج معاملات URL
+const URL_EMP    = PAGE_URL.searchParams.get('emp')     || '';   // employeeCode
+const URL_NAME   = PAGE_URL.searchParams.get('name')    || '';   // employeeFullName
+const URL_VISIT  = PAGE_URL.searchParams.get('visitId') || '';   // visitId (اختياري)
+
+let employeeCode     = '';
+let employeeFullName = '';
+let currentVisitId   = parseInt(URL_VISIT) || null;
+let currentStatus    = '';
+let selectedSev      = 'WARNING';
+
+// ══ CLOCK ══
+function updateClock() {
+    const now  = new Date();
+    const pad  = n => String(n).padStart(2, '0');
+    document.getElementById('clock').textContent =
+        `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const days   = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+    const months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو',
+                    'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    document.getElementById('dateLabel').textContent =
+        `${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+    const h = now.getHours();
+    document.getElementById('periodBadge').textContent =
+        h < 12 ? '☀️ صباحية' : h < 17 ? '🌤️ ظهيرة' : '🌙 مسائية';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ══ LOGIN ══
+async function login() {
+    const name = document.getElementById('empName').value.trim();
+    const code = document.getElementById('empCode').value.trim();
+    const errEl = document.getElementById('loginErr');
+    const btnTx = document.getElementById('loginBtnTx');
+
+    errEl.style.display = 'none';
+    if (!name || !code) {
+        errEl.textContent   = 'يرجى إدخال الاسم الثلاثي ورمز الموظف';
+        errEl.style.display = 'block';
+        return;
+    }
+    if (name.split(' ').filter(p => p).length < 3) {
+        errEl.textContent   = 'يرجى إدخال الاسم الثلاثي كاملاً (ثلاث كلمات)';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    btnTx.textContent = 'جارٍ التحقق…';
+    try {
+        const res  = await fetch(
+            `${BASE}/VerifyEmployee` +
+            `?employeeCode=${encodeURIComponent(code)}` +
+            `&employeeFullName=${encodeURIComponent(name)}`
+        );
+        const data = await res.json();
+
+        if (res.ok && data.valid) {
+            employeeCode     = code;
+            employeeFullName = data.fullName || name;
+            document.getElementById('empBadge').textContent = `👤 ${employeeFullName}`;
+            document.getElementById('loginOverlay').classList.remove('active');
+            showToast(`مرحباً ${employeeFullName.split(' ')[0]} ✅`, 'success');
+            init();
+        } else {
+            errEl.textContent   = data.message || 'بيانات الموظف غير صحيحة';
+            errEl.style.display = 'block';
+        }
+    } catch {
+        errEl.textContent   = 'خطأ في الاتصال بالسيرفر';
+        errEl.style.display = 'block';
+    }
+    btnTx.textContent = 'تسجيل الدخول';
+}
+
+// ══ INIT — بعد تسجيل الدخول ══
+async function init() {
+    if (currentVisitId) {
+        await loadVisit(currentVisitId);
+    } else {
+        // لا يوجد visitId في الرابط — أظهر فقط قسم البلاغ
+        document.getElementById('reportSection').style.display = 'block';
+    }
+}
+
+// ══ تحميل بيانات الزيارة ══
+async function loadVisit(visitId) {
+    show('loadingCard');
+    hide('visitCard');
+    hide('errorCard');
+    hide('reportSection');
+
+    try {
+        const res  = await fetch(`${BASE}/VisitStatus/${visitId}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            showError('الزيارة غير موجودة', data.message || `رقم التصريح: ${visitId}`);
+            return;
+        }
+
+        currentStatus = data.visit_status || '';
+        renderVisit(data);
+        hide('loadingCard');
+        show('visitCard');
+        show('reportSection');
+
+    } catch {
+        showError('خطأ في الاتصال', 'تعذر الوصول للسيرفر — تحقق من الشبكة');
+    }
+}
+
+// ══ عرض بيانات الزيارة ══
+function renderVisit(v) {
+    document.getElementById('vName').textContent   = v.visitor_name  || '—';
+    document.getElementById('vType').textContent   = v.visitor_type  || '—';
+    document.getElementById('vUnit').textContent   = v.unit_id       ?? '—';
+    document.getElementById('vCar').textContent    = v.car_number    || '—';
+    document.getElementById('vExpiry').textContent = v.expiry_date
+        ? new Date(v.expiry_date).toLocaleDateString('ar-IQ') : '—';
+
+    // حالة الزيارة
+    const statusMap = {
+        'مقبولة':    { cls: 'pill-accepted', dot: '',          label: '✅ مقبولة' },
+        'داخل الآن': { cls: 'pill-inside',   dot: 'dot-pulse', label: '🔵 داخل الآن' },
+        'مرفوضة':   { cls: 'pill-rejected',  dot: '',          label: '🚫 مرفوضة' },
+        'منتهية':    { cls: 'pill-rejected',  dot: '',          label: '⏰ منتهية' },
+        'بانتظار الموافقة': { cls: 'pill-pending', dot: 'dot-pulse', label: '⏳ بانتظار الموافقة' },
+    };
+    const s   = statusMap[v.visit_status] || { cls: 'pill-pending', dot: '', label: v.visit_status || '—' };
+    const sw  = document.getElementById('vStatusWrap');
+    sw.innerHTML = `<span class="status-pill ${s.cls}">
+        <span class="dot ${s.dot}"></span>${s.label}
+    </span>`;
+
+    // إظهار/إخفاء أزرار القبول والرفض
+    const actionRow = document.getElementById('actionRow');
+    const done = ['مرفوضة', 'منتهية', 'داخل الآن'].includes(v.visit_status);
+    actionRow.style.display = done ? 'none' : 'grid';
+
+    if (done) {
+        const msg = document.getElementById('actionMsg');
+        msg.className   = 'action-msg ok';
+        msg.textContent = v.visit_status === 'مرفوضة'
+            ? '🚫 تم رفض هذه الزيارة مسبقاً'
+            : v.visit_status === 'منتهية'
+            ? '⏰ انتهت الزيارة'
+            : '🔵 الزائر داخل المجمع حالياً';
+        msg.style.display = 'block';
+    }
+}
+
+// ══ قبول / رفض ══
+async function doAction(type) {
+    if (!currentVisitId) return;
+
+    const isAccept  = type === 'accept';
+    const endpoint  = isAccept ? `RecordEntry/${currentVisitId}` : `RejectVisit/${currentVisitId}`;
+    const btnAccept = document.getElementById('btnAccept');
+    const btnReject = document.getElementById('btnReject');
+    const msg       = document.getElementById('actionMsg');
+
+    btnAccept.disabled = true;
+    btnReject.disabled = true;
+    msg.style.display  = 'none';
+
+    try {
+        const res = await fetch(
+            `${BASE}/${endpoint}` +
+            `?employeeCode=${encodeURIComponent(employeeCode)}` +
+            `&employeeFullName=${encodeURIComponent(employeeFullName)}`,
+            { method: 'POST' }
+        );
+
+        if (res.ok) {
+            msg.className   = 'action-msg ok';
+            msg.textContent = isAccept
+                ? '✅ تم قبول الزيارة — يمكن لموظف الأمن تسجيل الدخول'
+                : '🚫 تم رفض الزيارة — سيُشعر موظف الأمن تلقائياً';
+            msg.style.display = 'block';
+            document.getElementById('actionRow').style.display = 'none';
+            showToast(isAccept ? '✅ تم قبول الزيارة' : '🚫 تم رفض الزيارة',
+                      isAccept ? 'success' : 'error');
+            // أعد تحميل البيانات لتحديث الحالة
+            setTimeout(() => loadVisit(currentVisitId), 800);
+        } else {
+            const data = await res.json().catch(() => ({}));
+            msg.className   = 'action-msg err';
+            msg.textContent = '❌ ' + (data.message || 'فشلت العملية — حاول مجدداً');
+            msg.style.display = 'block';
+            btnAccept.disabled = false;
+            btnReject.disabled = false;
+        }
+    } catch {
+        msg.className   = 'action-msg err';
+        msg.textContent = '❌ خطأ في الاتصال';
+        msg.style.display = 'block';
+        btnAccept.disabled = false;
+        btnReject.disabled = false;
+    }
+}
+
+// ══ درجة الخطورة ══
+function setSev(s) {
+    selectedSev = s;
+    ['INFO','WARNING','REJECTED'].forEach(k => {
+        document.getElementById('sev' + {INFO:'Info',WARNING:'Warn',REJECTED:'Danger'}[k])
+            .classList.toggle('active', k === s);
+    });
+}
+
+// ══ إرسال بلاغ ══
+async function submitReport() {
+    const notes = document.getElementById('reportNotes').value.trim();
+    const msgEl = document.getElementById('reportMsg');
+    msgEl.style.display = 'none';
+
+    if (!notes) {
+        msgEl.className   = 'err';
+        msgEl.textContent = '❌ يرجى كتابة تفاصيل البلاغ';
+        msgEl.style.display = 'block';
+        return;
+    }
+
+    try {
+        const res  = await fetch(`${BASE}/SubmitReport`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                employeeCode,
+                employeeFullName,
+                visitId: currentVisitId || null,
+                notes,
+                severity: selectedSev
+            })
+        });
+        const data = await res.json();
+        msgEl.className     = res.ok ? 'ok' : 'err';
+        msgEl.textContent   = res.ok ? `✅ ${data.message}` : `❌ ${data.message}`;
+        msgEl.style.display = 'block';
+        if (res.ok) {
+            document.getElementById('reportNotes').value = '';
+            showToast('📋 تم إرسال البلاغ', 'info');
+        }
+    } catch {
+        msgEl.className     = 'err';
+        msgEl.textContent   = '❌ خطأ في الاتصال';
+        msgEl.style.display = 'block';
+    }
+}
+
+// ══ Helpers ══
+function show(id) { document.getElementById(id).style.display = 'block'; }
+function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+function showError(title, sub) {
+    hide('loadingCard');
+    hide('visitCard');
+    document.getElementById('errorTitle').textContent = title;
+    document.getElementById('errorSub').textContent   = sub;
+    show('errorCard');
+    show('reportSection');
+}
+
+function showToast(msg, type = 'info') {
+    const el = document.createElement('div');
+    el.className   = `toast toast-${type}`;
+    el.textContent = msg;
+    document.getElementById('toastWrap').appendChild(el);
+    setTimeout(() => el.remove(), 3200);
+}
+
+// ══ AUTO-LOGIN من URL (يأتي من MAUI) ══
+window.addEventListener('DOMContentLoaded', () => {
+    if (URL_EMP && URL_NAME) {
+        document.getElementById('empName').value = URL_NAME;
+        document.getElementById('empCode').value = URL_EMP;
+        const bar  = document.getElementById('autoBar');
+        bar.querySelector('span').textContent = `جارٍ تسجيل الدخول بحساب: ${URL_NAME.split(' ')[0]}…`;
+        bar.classList.add('visible');
+        setTimeout(login, 500);
+    }
+});
+    </script>
+</body>
+</html>
