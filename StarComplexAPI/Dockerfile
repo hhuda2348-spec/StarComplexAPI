@@ -1,0 +1,19 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# نسخ ملف المشروع وبنائه
+COPY ["StarComplexAPI.csproj", "."]
+RUN dotnet restore "./StarComplexAPI.csproj"
+
+COPY . .
+RUN dotnet publish "StarComplexAPI.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+
+# تشغيل الـ API وتوجيه المنفذ
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "StarComplexAPI.dll"]
