@@ -14,15 +14,11 @@ public class AuthController : ControllerBase
     private readonly StarComplexContext _context;
     private readonly IMemoryCache _cache;
 
-    // ══ ثوابت Argon2id ═══════════════════════════════════════════
     private const int Argon2MemorySize = 16384;
     private const int Argon2Iterations = 2;
     private const int Argon2Parallelism = 1;
     private const int Argon2HashLength = 32;
     private const int SaltSize = 16;
-
-    private const string TypeSecurity = "security";
-    private const string TypeAdmin = "admin";
 
     public AuthController(StarComplexContext context, IMemoryCache cache)
     {
@@ -30,210 +26,190 @@ public class AuthController : ControllerBase
         _cache = cache;
     }
 
-    // ══ Argon2id — مساعدات مشتركة ════════════════════════════════
+    // ══ Helpers ════════════════════════════════════════════════════════════
 
     private static byte[] GenerateSalt()
     {
-        byte[] salt = new byte[SaltSize];
+        var salt = new byte[SaltSize];
         RandomNumberGenerator.Fill(salt);
         return salt;
     }
 
-    // ── هاش الموظف: "fullName||code" ─────────────────────────────
+    private static string NormaliseName(string name)
+        => string.Join(" ",
+               name.Trim()
+                   .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                   .Select(p => p.Trim()));
+
+    /// <summary>
+    /// تطبيع شامل للنص العربي — يوحّد الهمزات والياء والتاء والتشكيل
+    /// </summary>
+    private static string NormaliseArabic(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        s = NormaliseName(s);
+        // توحيد الهمزات
+        s = s.Replace("أ", "ا").Replace("إ", "ا").Replace("آ", "ا")
+             .Replace("ؤ", "و").Replace("ئ", "ي");
+        // توحيد التاء المربوطة والهاء
+        s = s.Replace("ة", "ه");
+        // توحيد الياء (فارسية → عربية)
+        s = s.Replace("ي", "ي").Replace("\u06CC", "ي").Replace("\u0649", "ي");
+        // توحيد الكاف الفارسية
+        s = s.Replace("\u06A9", "ك");
+        // إزالة التشكيل (U+064B → U+065F)
+        s = new string(s.Where(c => c < '\u064B' || c > '\u065F').ToArray());
+        return s.Trim();
+    }
+
+    private static bool ArabicNamesEqual(string a, string b)
+        => string.Equals(NormaliseArabic(a), NormaliseArabic(b), StringComparison.Ordinal);
+
+    /// <summary>
+    /// التحقق من المسمى الوظيفي الإداري — يتجاهل كل اختلافات الكتابة
+    /// </summary>
+    private static bool IsAdminJobTitle(string? jobTitle)
+    {
+        if (string.IsNullOrWhiteSpace(jobTitle)) return false;
+        var j = NormaliseArabic(jobTitle);
+        return j.Contains("اداري") || j == "مدير" || j == "مديره" || j.StartsWith("مدير");
+    }
+
+    private static bool IsSecurityJobTitle(string? jobTitle)
+    {
+        if (string.IsNullOrWhiteSpace(jobTitle)) return false;
+        var j = NormaliseArabic(jobTitle);
+        return j.Contains("امن") || j.Contains("حراسه") || j.Contains("حراسة");
+    }
+
+    // ── Argon2id hash — للسكان فقط ────────────────────────────────────────
     private static string ComputeHash(string fullName, string code, byte[] salt)
     {
-        string combined = $"{fullName.Trim()}||{code.Trim()}";
-        byte[] input = Encoding.UTF8.GetBytes(combined);
-
-        using var argon2 = new Argon2id(input)
+        var combined = $"{NormaliseArabic(fullName)}||{code.Trim()}";
+        var input = Encoding.UTF8.GetBytes(combined);
+        using var a = new Argon2id(input)
         {
             Salt = salt,
             MemorySize = Argon2MemorySize,
             Iterations = Argon2Iterations,
             DegreeOfParallelism = Argon2Parallelism
         };
-
-        byte[] hash = argon2.GetBytes(Argon2HashLength);
-        return $"{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
+        return $"{Convert.ToBase64String(salt)}:{Convert.ToBase64String(a.GetBytes(Argon2HashLength))}";
     }
 
     private static bool VerifyHash(string fullName, string code, string storedHash)
     {
         try
         {
-            string[] parts = storedHash.Split(':');
+            var parts = storedHash.Split(':');
             if (parts.Length != 2) return false;
+            var salt = Convert.FromBase64String(parts[0]);
+            var storedBytes = Convert.FromBase64String(parts[1]);
 
-            byte[] salt = Convert.FromBase64String(parts[0]);
-            byte[] storedBytes = Convert.FromBase64String(parts[1]);
-
-            string combined = $"{fullName.Trim()}||{code.Trim()}";
-            byte[] input = Encoding.UTF8.GetBytes(combined);
-
-            using var argon2 = new Argon2id(input)
+            var combined = $"{NormaliseArabic(fullName)}||{code.Trim()}";
+            var input = Encoding.UTF8.GetBytes(combined);
+            using var a = new Argon2id(input)
             {
                 Salt = salt,
                 MemorySize = Argon2MemorySize,
                 Iterations = Argon2Iterations,
                 DegreeOfParallelism = Argon2Parallelism
             };
-
-            byte[] computed = argon2.GetBytes(Argon2HashLength);
-            return CryptographicOperations.FixedTimeEquals(computed, storedBytes);
+            return CryptographicOperations.FixedTimeEquals(a.GetBytes(Argon2HashLength), storedBytes);
         }
         catch { return false; }
     }
 
-    // ── هاش الساكن: "fullName||accessCode" ───────────────────────
-    private static string ComputeResidentHash(string fullName, string accessCode, byte[] salt)
-    {
-        string combined = $"{fullName.Trim()}||{accessCode.Trim()}";
-        byte[] input = Encoding.UTF8.GetBytes(combined);
-
-        using var argon2 = new Argon2id(input)
-        {
-            Salt = salt,
-            MemorySize = Argon2MemorySize,
-            Iterations = Argon2Iterations,
-            DegreeOfParallelism = Argon2Parallelism
-        };
-
-        byte[] hash = argon2.GetBytes(Argon2HashLength);
-        return $"{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
-    }
-
-    private static bool VerifyResidentHash(string fullName, string accessCode, string storedHash)
-    {
-        try
-        {
-            string[] parts = storedHash.Split(':');
-            if (parts.Length != 2) return false;
-
-            byte[] salt = Convert.FromBase64String(parts[0]);
-            byte[] storedBytes = Convert.FromBase64String(parts[1]);
-
-            string combined = $"{fullName.Trim()}||{accessCode.Trim()}";
-            byte[] input = Encoding.UTF8.GetBytes(combined);
-
-            using var argon2 = new Argon2id(input)
-            {
-                Salt = salt,
-                MemorySize = Argon2MemorySize,
-                Iterations = Argon2Iterations,
-                DegreeOfParallelism = Argon2Parallelism
-            };
-
-            byte[] computed = argon2.GetBytes(Argon2HashLength);
-            return CryptographicOperations.FixedTimeEquals(computed, storedBytes);
-        }
-        catch { return false; }
-    }
-
-    // ══════════════════════════════════════════════════════════════
-    //  مساعد مشترك — تحقق من هوية الموظف (أمن أو إداري)
-    //
-    //  المنطق:
-    //  ┌────────────────────────────────────────────────────────────┐
-    //  │ 1. ابحث بالكود                                             │
-    //  │ 2. إذا كان النوع مختلف → ارفض                             │
-    //  │ 3. إذا كان password_hash موجود → تحقق به                 │
-    //  │ 4. إذا password_hash فارغ (أول دخول):                     │
-    //  │       a. تحقق نصي من الاسم الكامل                         │
-    //  │       b. ولّد Argon2id وحفظ في:                           │
-    //  │          - password_hash (الأساسي)                        │
-    //  │          - name_hash (بديل)                               │
-    //  │          - name_hash_admin (للإداريين فقط)                │
-    //  │       c. عيّن employee_type و employee_index              │
-    //  │ ✅ بعد أول دخول: تحقق من password_hash                   │
-    //  └────────────────────────────────────────────────────────────┘
-    // ══════════════════════════════════════════════════════════════
+    // ══ Employee authenticator — بدون تشفير، مقارنة مباشرة للاسم ══════════
     private async Task<(Employee? employee, string? error)> AuthEmployee(
-    string fullName, string code, string requiredType)
+        string fullName, string code)
     {
-        string cleanCode = code.Trim();
-        string cleanName = fullName.Trim();
+        var cleanCode = code.Trim();
+        var cleanName = NormaliseArabic(fullName);
 
-        // ── 1. ابحث بالكود ───────────────────────────────────────
+        // 1. البحث بالكود
         var employee = await _context.Employees
-            .FirstOrDefaultAsync(e => (e.employee_code ?? "").Trim() == cleanCode);
+            .FirstOrDefaultAsync(e => e.employee_code == cleanCode);
 
         if (employee == null)
-            return (null, "رمز الموظف أو الاسم غير صحيح");
+            employee = await _context.Employees
+                .FirstOrDefaultAsync(e => EF.Functions.Like(e.employee_code, cleanCode));
 
-        // ── 2. فحص النوع ─────────────────────────────────────────
-        if (!string.IsNullOrEmpty(employee.employee_type) &&
-            employee.employee_type != requiredType)
+        if (employee == null)
+        {
+            Console.WriteLine($"[AUTH] Employee not found: code='{cleanCode}'");
             return (null, "رمز الموظف أو الاسم غير صحيح");
+        }
 
-        // ── 3. password_hash موجود → تحقق منه مباشرة ─────────────
+        // 2. مقارنة الاسم مباشرة مع قاعدة البيانات — بدون تشفير
+        var dbFullName = NormaliseArabic(string.Join(" ",
+            new[] { employee.first_name, employee.second_name, employee.third_name }
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!.Trim())));
+
+        Console.WriteLine($"[AUTH] DB (Normalised)='{dbFullName}' | Input (Normalised)='{cleanName}'");
+
+        if (!string.Equals(dbFullName, cleanName, StringComparison.Ordinal))
+        {
+            Console.WriteLine($"[AUTH] Name mismatch | DB='{dbFullName}' | Input='{cleanName}'");
+            return (null, "رمز الموظف أو الاسم غير صحيح");
+        }
+
+        // 3. مسح أي هاش قديم — لا نحتاجه للموظفين
         if (!string.IsNullOrEmpty(employee.password_hash))
         {
-            bool valid = VerifyHash(cleanName, cleanCode, employee.password_hash);
-            if (!valid)
-                return (null, "رمز الموظف أو الاسم غير صحيح");
+            employee.password_hash = null;
+            employee.name_hash = null;
         }
-        else
+
+        // 4. تعيين employee_index إذا لم يكن موجوداً
+        if (string.IsNullOrEmpty(employee.employee_index))
         {
-            // ── 4. أول دخول: تحقق نصي من الاسم الكامل ──────────
-            string dbFullName = string.Join(" ",
-                new[] { employee.first_name, employee.second_name, employee.third_name }
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .Select(n => n!.Trim()));
-
-            string inputName = string.Join(" ",
-                cleanName.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                         .Select(n => n.Trim()));
-
-            bool namesMatch = string.Equals(
-                dbFullName, inputName, StringComparison.CurrentCultureIgnoreCase);
-
-            if (!namesMatch)
-                return (null, "رمز الموظف أو الاسم غير صحيح");
-
-            // ── 5. ولّد الهاشات وحفظها ────────────────────────────
-            byte[] salt = GenerateSalt();
-            string hash = ComputeHash(cleanName, cleanCode, salt);
-
-            // ✅ password_hash — للتحقق الرئيسي
-            employee.password_hash = hash;
-
-            // ✅ name_hash — لكلا النوعين (security + admin) بدون name_hash_admin
-            employee.name_hash = hash;
-
-            // ✅ عيّن نوع الموظف
-            employee.employee_type = requiredType;
-
-            // ✅ عيّن employee_index
-            if (string.IsNullOrEmpty(employee.employee_index))
-            {
-                var maxIndex = await _context.Employees
-                    .Where(e => !string.IsNullOrEmpty(e.employee_index))
-                    .CountAsync();
-
-                employee.employee_index = (maxIndex + 1).ToString();
-            }
-
-            await _context.SaveChangesAsync();
+            var count = await _context.Employees
+                .CountAsync(e => !string.IsNullOrEmpty(e.employee_index));
+            employee.employee_index = (count + 1).ToString();
         }
 
-        // ── 6. تحديث إحصاءات الدخول ──────────────────────────────
+        // 5. تحديث إحصائيات الدخول
         employee.login_count = (employee.login_count ?? 0) + 1;
         employee.last_login = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
+
+        // 6. حفظ مع معالجة Concurrency
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            Console.WriteLine($"[AUTH] Concurrency conflict, retrying...");
+            foreach (var entry in ex.Entries)
+                await entry.ReloadAsync();
+
+            employee.login_count = (employee.login_count ?? 0) + 1;
+            employee.last_login = DateTime.UtcNow;
+
+            try { await _context.SaveChangesAsync(); }
+            catch (Exception ex2)
+            {
+                Console.WriteLine($"[AUTH] Save failed (non-critical): {ex2.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AUTH] Save failed (non-critical): {ex.Message}");
+        }
 
         return (employee, null);
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  تسجيل دخول الساكن
-    //  POST api/Auth/login
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════
+    //  POST api/Auth/login   — Resident login
+    // ══════════════════════════════════════════════════════════════════════
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.AccessCode))
             return BadRequest(new { message = "يرجى إدخال الرمز السري" });
-
         if (string.IsNullOrWhiteSpace(request.FullName))
             return BadRequest(new { message = "يرجى إدخال الاسم الثلاثي" });
 
@@ -244,38 +220,32 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "الرمز السري أو الاسم غير صحيح" });
 
         var names = request.FullName.Trim()
-                           .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-        string fName = names.Length > 0 ? names[0] : "ساكن";
-        string sName = names.Length > 1 ? names[1] : "";
-        string tName = names.Length > 2 ? string.Join(" ", names.Skip(2)) : "";
+                            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var fName = names.Length > 0 ? names[0] : "ساكن";
+        var sName = names.Length > 1 ? names[1] : "";
+        var tName = names.Length > 2 ? string.Join(" ", names.Skip(2)) : "";
 
         Resident? resident = await _context.Residents
             .FirstOrDefaultAsync(r =>
                 r.unit_id == unit.unit_id &&
-                (r.first_name ?? "").Equals(fName) &&
-                (r.second_name ?? "").Equals(sName) &&
-                (r.third_name ?? "").Equals(tName));
+                (r.first_name ?? "").Equals(fName, StringComparison.OrdinalIgnoreCase) &&
+                (r.second_name ?? "").Equals(sName, StringComparison.OrdinalIgnoreCase) &&
+                (r.third_name ?? "").Equals(tName, StringComparison.OrdinalIgnoreCase));
 
         if (resident != null)
         {
             if (!string.IsNullOrEmpty(resident.name_hash))
             {
-                bool valid = VerifyResidentHash(
-                    request.FullName.Trim(),
-                    request.AccessCode.Trim(),
-                    resident.name_hash);
-
-                if (!valid)
+                if (!VerifyResidentHash(request.FullName.Trim(),
+                                        request.AccessCode.Trim(),
+                                        resident.name_hash))
                     return Unauthorized(new { message = "الرمز السري أو الاسم غير صحيح" });
             }
             else
             {
-                byte[] newSalt = GenerateSalt();
+                var newSalt = GenerateSalt();
                 resident.name_hash = ComputeResidentHash(
-                    request.FullName.Trim(),
-                    request.AccessCode.Trim(),
-                    newSalt);
+                    request.FullName.Trim(), request.AccessCode.Trim(), newSalt);
             }
 
             resident.login_count = (resident.login_count ?? 0) + 1;
@@ -289,31 +259,28 @@ public class AuthController : ControllerBase
                 .OrderBy(r => r.resident_id)
                 .FirstOrDefaultAsync();
 
-            int currentCount = await _context.Residents
+            var currentCount = await _context.Residents
                 .CountAsync(r => r.unit_id == unit.unit_id);
 
-            int maxAllowed = (primaryResident?.family_members_count ?? 0) > 0
+            var maxAllowed = (primaryResident?.family_members_count ?? 0) > 0
                 ? primaryResident!.family_members_count!.Value
                 : 10;
 
             if (currentCount >= maxAllowed)
                 return BadRequest(new
                 {
-                    message =
-                        $"عذراً، تم الوصول للحد الأقصى للمستخدمين لهذه الوحدة ({maxAllowed} أشخاص)"
+                    message = $"عذراً، تم الوصول للحد الأقصى للمستخدمين لهذه الوحدة ({maxAllowed} أشخاص)"
                 });
 
-            byte[] salt = GenerateSalt();
-            string nameHash = ComputeResidentHash(
-                request.FullName.Trim(),
-                request.AccessCode.Trim(),
-                salt);
+            var salt = GenerateSalt();
+            var nameHash = ComputeResidentHash(
+                request.FullName.Trim(), request.AccessCode.Trim(), salt);
 
             resident = new Resident
             {
                 unit_id = unit.unit_id,
                 resident_code = "RES-" + unit.unit_id + "-" +
-                                 Guid.NewGuid().ToString()[..4].ToUpper(),
+                                Guid.NewGuid().ToString()[..4].ToUpper(),
                 first_name = fName,
                 second_name = sName,
                 third_name = tName,
@@ -337,16 +304,16 @@ public class AuthController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  تسجيل دخول موظف الأمن
-    //  POST api/Auth/employee-login
-    //  body: { fullName, employeeCode }
-    //
-    //  ✅ يستقبل الاسم الثلاثي الكامل
-    //  ✅ أول دخول: يتحقق نصياً ثم يشفّر
-    //  ✅ يحفظ في password_hash + name_hash
-    //  ✅ الدخولات التالية: يتحقق من password_hash
-    // ══════════════════════════════════════════════════════════════
+    // ── Resident hash helpers ──────────────────────────────────────────────
+    private static string ComputeResidentHash(string fullName, string accessCode, byte[] salt)
+        => ComputeHash(fullName, accessCode, salt);
+
+    private static bool VerifyResidentHash(string fullName, string accessCode, string storedHash)
+        => VerifyHash(fullName, accessCode, storedHash);
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  POST api/Auth/employee-login   — Security employee
+    // ══════════════════════════════════════════════════════════════════════
     [HttpPost("employee-login")]
     public async Task<IActionResult> EmployeeLogin([FromBody] EmployeeLoginRequest request)
     {
@@ -354,26 +321,28 @@ public class AuthController : ControllerBase
             string.IsNullOrWhiteSpace(request.EmployeeCode))
             return BadRequest(new { message = "يرجى إدخال الاسم الثلاثي ورمز الموظف" });
 
-        var (employee, error) = await AuthEmployee(
-            request.FullName, request.EmployeeCode, TypeSecurity);
-
+        var (employee, error) = await AuthEmployee(request.FullName, request.EmployeeCode);
         if (employee == null)
             return Unauthorized(new { message = error });
 
-        // ── رفض الموظف الإداري من بوابة الأمن ───────────────────
-        string jobTitle = employee.job_title?.Trim() ?? "";
-        bool isAdminJob = jobTitle is "موظف اداري" or "موظف إداري" or "مدير" or "مديرة";
+        var jobTitle = employee.job_title?.Trim() ?? "";
 
-        if (isAdminJob)
+        if (IsAdminJobTitle(jobTitle))
             return Unauthorized(new
             {
                 message = "هذا الحساب مخصص للموظفين الإداريين، يرجى استخدام بوابة الإدارة"
             });
 
-        string dbFullName = string.Join(" ",
+        if (string.IsNullOrWhiteSpace(jobTitle))
+            return Unauthorized(new
+            {
+                message = "لم يتم تحديد المسمى الوظيفي، يرجى التواصل مع الإدارة"
+            });
+
+        var dbFullName = NormaliseName(string.Join(" ",
             new[] { employee.first_name, employee.second_name, employee.third_name }
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .Select(n => n!.Trim()));
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!.Trim())));
 
         return Ok(new
         {
@@ -392,15 +361,9 @@ public class AuthController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  تسجيل دخول الموظف الإداري / المدير
-    //  POST api/Auth/admin-login
-    //  body: { fullName, employeeCode }
-    //
-    //  ✅ نفس منطق الأمن لكن requiredType = "admin"
-    //  ✅ يرفض موظف الأمن من بوابة الإدارة
-    //  ✅ يحفظ في name_hash_admin بالإضافة للحقول الأخرى
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════
+    //  POST api/Auth/admin-login   — Admin / manager
+    // ══════════════════════════════════════════════════════════════════════
     [HttpPost("admin-login")]
     public async Task<IActionResult> AdminLogin([FromBody] EmployeeLoginRequest request)
     {
@@ -408,27 +371,23 @@ public class AuthController : ControllerBase
             string.IsNullOrWhiteSpace(request.EmployeeCode))
             return BadRequest(new { message = "يرجى إدخال الاسم الثلاثي ورمز الموظف" });
 
-        var (employee, error) = await AuthEmployee(
-            request.FullName, request.EmployeeCode, TypeAdmin);
-
+        var (employee, error) = await AuthEmployee(request.FullName, request.EmployeeCode);
         if (employee == null)
             return Unauthorized(new { message = error });
 
-        // ── رفض موظف الأمن من بوابة الإدارة ─────────────────────
-        string jobTitle = employee.job_title?.Trim() ?? "";
-        bool isAdminJob = jobTitle is "موظف اداري" or "موظف إداري" or "مدير" or "مديرة";
+        var jobTitle = employee.job_title?.Trim() ?? "";
 
-        if (!isAdminJob)
+        if (!IsAdminJobTitle(jobTitle))
             return Unauthorized(new
             {
-                message = "ليس لديك صلاحية الوصول للوحة الإدارة",
-                hint = $"المسمى الوظيفي الحالي: {jobTitle}"
+                message = "ليس لديك صلاحية الوصول للوحة الإدارة\nيجب أن يكون المسمى الوظيفي: موظف اداري أو مدير",
+                hint = $"المسمى الوظيفي الحالي: '{jobTitle}'"
             });
 
-        string dbFullName = string.Join(" ",
+        var dbFullName = NormaliseName(string.Join(" ",
             new[] { employee.first_name, employee.second_name, employee.third_name }
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .Select(n => n!.Trim()));
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!.Trim())));
 
         return Ok(new
         {
@@ -436,6 +395,7 @@ public class AuthController : ControllerBase
             role = "admin",
             employeeCode = employee.employee_code,
             employeeName = dbFullName,
+            employeeFullName = dbFullName,
             jobTitle = employee.job_title,
             employeeId = employee.employee_id,
             employeeIndex = employee.employee_index,
@@ -445,9 +405,54 @@ public class AuthController : ControllerBase
             nationalIdBackPath = employee.national_id_back_path
         });
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  POST api/Auth/debug-employee   — للتشخيص فقط
+    // ══════════════════════════════════════════════════════════════════════
+    [HttpPost("debug-employee")]
+    public async Task<IActionResult> DebugEmployee([FromBody] EmployeeLoginRequest request)
+    {
+        var cleanCode = request.EmployeeCode.Trim();
+        var cleanName = NormaliseName(request.FullName);
+
+        var allEmployees = await _context.Employees.ToListAsync();
+        var codeMatch = allEmployees.FirstOrDefault(e =>
+            (e.employee_code ?? "").Trim() == cleanCode);
+
+        if (codeMatch == null)
+            return Ok(new
+            {
+                found = false,
+                totalEmployees = allEmployees.Count,
+                sampleCodes = allEmployees.Take(5).Select(e => new
+                {
+                    raw = e.employee_code,
+                    length = e.employee_code?.Length
+                })
+            });
+
+        var dbFullName = NormaliseName(string.Join(" ",
+            new[] { codeMatch.first_name, codeMatch.second_name, codeMatch.third_name }
+                .Where(n => !string.IsNullOrWhiteSpace(n))));
+
+        return Ok(new
+        {
+            found = true,
+            dbName = dbFullName,
+            dbNameNormalised = NormaliseArabic(dbFullName),
+            inputName = cleanName,
+            inputNameNormalised = NormaliseArabic(cleanName),
+            namesMatch = ArabicNamesEqual(dbFullName, cleanName),
+            hasHash = !string.IsNullOrEmpty(codeMatch.password_hash),
+            jobTitle = codeMatch.job_title,
+            jobTitleNormalised = NormaliseArabic(codeMatch.job_title ?? ""),
+            isAdmin = IsAdminJobTitle(codeMatch.job_title),
+            isSecurity = IsSecurityJobTitle(codeMatch.job_title)
+        });
+    }
 }
 
-// ══ DTOs ══════════════════════════════════════════════════════════
+// ══ DTOs ══════════════════════════════════════════════════════════════════
 public class LoginRequest
 {
     public string FullName { get; set; } = string.Empty;
