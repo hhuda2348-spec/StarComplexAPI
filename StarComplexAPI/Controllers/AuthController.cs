@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using StarComplexAPI.Data;
@@ -246,12 +246,11 @@ public class AuthController : ControllerBase
         var tName = names.Length > 2 ? string.Join(" ", names.Skip(2)) : "";
 
         Resident? resident = await _context.Residents
-            .FirstOrDefaultAsync(r =>
-                r.unit_id == unit.unit_id &&
-                (r.first_name ?? "").Equals(fName, StringComparison.OrdinalIgnoreCase) &&
-                (r.second_name ?? "").Equals(sName, StringComparison.OrdinalIgnoreCase) &&
-                (r.third_name ?? "").Equals(tName, StringComparison.OrdinalIgnoreCase));
-
+     .FirstOrDefaultAsync(r =>
+         r.unit_id == unit.unit_id &&
+         (r.first_name ?? "") == fName &&
+         (r.second_name ?? "") == sName &&
+         (r.third_name ?? "") == tName);
         if (resident != null)
         {
             if (!string.IsNullOrEmpty(resident.name_hash))
