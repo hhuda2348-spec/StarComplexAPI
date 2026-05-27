@@ -66,6 +66,26 @@ public class AuthController : ControllerBase
         => string.Equals(NormaliseArabic(a), NormaliseArabic(b), StringComparison.Ordinal);
 
     /// <summary>
+    /// التحقق من نوع الموظف — يقبل امن / security / موظف امن
+    /// </summary>
+    private static bool IsSecurityEmployeeType(string? employeeType)
+    {
+        if (string.IsNullOrWhiteSpace(employeeType)) return false;
+        var t = NormaliseArabic(employeeType.Trim().ToLower());
+        return t == "امن" || t == "security" || t.Contains("امن");
+    }
+
+    /// <summary>
+    /// التحقق من نوع الموظف الإداري — يقبل ادار / admin / مدير
+    /// </summary>
+    private static bool IsAdminEmployeeType(string? employeeType)
+    {
+        if (string.IsNullOrWhiteSpace(employeeType)) return false;
+        var t = NormaliseArabic(employeeType.Trim().ToLower());
+        return t == "اداري" || t == "admin" || t == "مدير" || t.Contains("اداري");
+    }
+
+    /// <summary>
     /// التحقق من المسمى الوظيفي الإداري — يتجاهل كل اختلافات الكتابة
     /// </summary>
     private static bool IsAdminJobTitle(string? jobTitle)
@@ -79,7 +99,7 @@ public class AuthController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(jobTitle)) return false;
         var j = NormaliseArabic(jobTitle);
-        return j.Contains("امن") || j.Contains("حراسه") || j.Contains("حراسة");
+        return j.Contains("امن") || j.Contains("حراسه") || j.Contains("حراسة") || j == "امن" || j == "موظف امن";
     }
 
     // ── Argon2id hash — للسكان فقط ────────────────────────────────────────
@@ -326,17 +346,20 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = error });
 
         var jobTitle = employee.job_title?.Trim() ?? "";
+        var empType = employee.employee_type?.Trim() ?? "";
 
-        if (IsAdminJobTitle(jobTitle))
+        // ── يُرفض لو كان إداري (job_title أو employee_type) ──────────────
+        if (IsAdminJobTitle(jobTitle) || IsAdminEmployeeType(empType))
             return Unauthorized(new
             {
                 message = "هذا الحساب مخصص للموظفين الإداريين، يرجى استخدام بوابة الإدارة"
             });
 
-        if (string.IsNullOrWhiteSpace(jobTitle))
+        // ── يجب أن يكون موظف أمن (job_title أو employee_type) ────────────
+        if (!IsSecurityJobTitle(jobTitle) && !IsSecurityEmployeeType(empType))
             return Unauthorized(new
             {
-                message = "لم يتم تحديد المسمى الوظيفي، يرجى التواصل مع الإدارة"
+                message = "ليس لديك صلاحية الوصول لبوابة الأمن\nيجب أن يكون نوع الموظف: امن أو المسمى الوظيفي: موظف امن"
             });
 
         var dbFullName = NormaliseName(string.Join(" ",
@@ -352,6 +375,7 @@ public class AuthController : ControllerBase
             employeeName = dbFullName,
             employeeFullName = dbFullName,
             jobTitle = employee.job_title,
+            employeeType = employee.employee_type,
             employeeId = employee.employee_id,
             employeeIndex = employee.employee_index,
             hasFrontId = !string.IsNullOrEmpty(employee.national_id_front_path),
@@ -376,12 +400,14 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = error });
 
         var jobTitle = employee.job_title?.Trim() ?? "";
+        var empType = employee.employee_type?.Trim() ?? "";
 
-        if (!IsAdminJobTitle(jobTitle))
+        // ── يجب أن يكون إداري (job_title أو employee_type) ───────────────
+        if (!IsAdminJobTitle(jobTitle) && !IsAdminEmployeeType(empType))
             return Unauthorized(new
             {
-                message = "ليس لديك صلاحية الوصول للوحة الإدارة\nيجب أن يكون المسمى الوظيفي: موظف اداري أو مدير",
-                hint = $"المسمى الوظيفي الحالي: '{jobTitle}'"
+                message = "ليس لديك صلاحية الوصول للوحة الإدارة\nيجب أن يكون نوع الموظف: ادار أو المسمى الوظيفي: موظف اداري أو مدير",
+                hint = $"نوع الموظف الحالي: '{empType}' | المسمى الوظيفي الحالي: '{jobTitle}'"
             });
 
         var dbFullName = NormaliseName(string.Join(" ",
@@ -397,6 +423,7 @@ public class AuthController : ControllerBase
             employeeName = dbFullName,
             employeeFullName = dbFullName,
             jobTitle = employee.job_title,
+            employeeType = employee.employee_type,
             employeeId = employee.employee_id,
             employeeIndex = employee.employee_index,
             hasFrontId = !string.IsNullOrEmpty(employee.national_id_front_path),
@@ -446,8 +473,10 @@ public class AuthController : ControllerBase
             hasHash = !string.IsNullOrEmpty(codeMatch.password_hash),
             jobTitle = codeMatch.job_title,
             jobTitleNormalised = NormaliseArabic(codeMatch.job_title ?? ""),
-            isAdmin = IsAdminJobTitle(codeMatch.job_title),
-            isSecurity = IsSecurityJobTitle(codeMatch.job_title)
+            employeeType = codeMatch.employee_type,
+            employeeTypeNorm = NormaliseArabic(codeMatch.employee_type ?? ""),
+            isAdmin = IsAdminJobTitle(codeMatch.job_title) || IsAdminEmployeeType(codeMatch.employee_type),
+            isSecurity = IsSecurityJobTitle(codeMatch.job_title) || IsSecurityEmployeeType(codeMatch.employee_type)
         });
     }
 }

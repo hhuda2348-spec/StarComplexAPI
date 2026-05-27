@@ -272,7 +272,7 @@
             }
         }
 
-        /* ══ ACTION BUTTONS (قبول / رفض) ══ */
+        /* ══ ACTION BUTTONS ══ */
         .action-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -845,15 +845,15 @@
 
     <script>
 // ══════════════════════════════════════════════════════════
-// CONFIG
+// ✅ CONFIG — BASE URL ثابت يشير للسيرفر الحقيقي على Railway
 // ══════════════════════════════════════════════════════════
-const PAGE_URL  = new URL(location.href);
-const BASE      = PAGE_URL.origin + '/api/Security';
+const BASE     = 'https://starcomplexapi-production.up.railway.app/api/Security';
+const PAGE_URL = new URL(location.href);
 
 // استخراج معاملات URL
-const URL_EMP    = PAGE_URL.searchParams.get('emp')     || '';   // employeeCode
-const URL_NAME   = PAGE_URL.searchParams.get('name')    || '';   // employeeFullName
-const URL_VISIT  = PAGE_URL.searchParams.get('visitId') || '';   // visitId (اختياري)
+const URL_EMP   = PAGE_URL.searchParams.get('emp')     || '';
+const URL_NAME  = PAGE_URL.searchParams.get('name')    || '';
+const URL_VISIT = PAGE_URL.searchParams.get('visitId') || '';
 
 let employeeCode     = '';
 let employeeFullName = '';
@@ -863,8 +863,8 @@ let selectedSev      = 'WARNING';
 
 // ══ CLOCK ══
 function updateClock() {
-    const now  = new Date();
-    const pad  = n => String(n).padStart(2, '0');
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
     document.getElementById('clock').textContent =
         `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
     const days   = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
@@ -881,8 +881,8 @@ updateClock();
 
 // ══ LOGIN ══
 async function login() {
-    const name = document.getElementById('empName').value.trim();
-    const code = document.getElementById('empCode').value.trim();
+    const name  = document.getElementById('empName').value.trim();
+    const code  = document.getElementById('empCode').value.trim();
     const errEl = document.getElementById('loginErr');
     const btnTx = document.getElementById('loginBtnTx');
 
@@ -918,19 +918,19 @@ async function login() {
             errEl.textContent   = data.message || 'بيانات الموظف غير صحيحة';
             errEl.style.display = 'block';
         }
-    } catch {
-        errEl.textContent   = 'خطأ في الاتصال بالسيرفر';
+    } catch(err) {
+        errEl.textContent   = 'خطأ في الاتصال بالسيرفر — تحقق من الإنترنت';
         errEl.style.display = 'block';
+        console.error('[Login Error]', err);
     }
     btnTx.textContent = 'تسجيل الدخول';
 }
 
-// ══ INIT — بعد تسجيل الدخول ══
+// ══ INIT ══
 async function init() {
     if (currentVisitId) {
         await loadVisit(currentVisitId);
     } else {
-        // لا يوجد visitId في الرابط — أظهر فقط قسم البلاغ
         document.getElementById('reportSection').style.display = 'block';
     }
 }
@@ -957,7 +957,8 @@ async function loadVisit(visitId) {
         show('visitCard');
         show('reportSection');
 
-    } catch {
+    } catch(err) {
+        console.error('[loadVisit Error]', err);
         showError('خطأ في الاتصال', 'تعذر الوصول للسيرفر — تحقق من الشبكة');
     }
 }
@@ -971,21 +972,19 @@ function renderVisit(v) {
     document.getElementById('vExpiry').textContent = v.expiry_date
         ? new Date(v.expiry_date).toLocaleDateString('ar-IQ') : '—';
 
-    // حالة الزيارة
     const statusMap = {
-        'مقبولة':    { cls: 'pill-accepted', dot: '',          label: '✅ مقبولة' },
-        'داخل الآن': { cls: 'pill-inside',   dot: 'dot-pulse', label: '🔵 داخل الآن' },
-        'مرفوضة':   { cls: 'pill-rejected',  dot: '',          label: '🚫 مرفوضة' },
-        'منتهية':    { cls: 'pill-rejected',  dot: '',          label: '⏰ منتهية' },
-        'بانتظار الموافقة': { cls: 'pill-pending', dot: 'dot-pulse', label: '⏳ بانتظار الموافقة' },
+        'مقبولة':              { cls: 'pill-accepted', dot: '',          label: '✅ مقبولة'              },
+        'داخل الآن':           { cls: 'pill-inside',   dot: 'dot-pulse', label: '🔵 داخل الآن'           },
+        'مرفوضة':              { cls: 'pill-rejected',  dot: '',          label: '🚫 مرفوضة'              },
+        'منتهية':              { cls: 'pill-rejected',  dot: '',          label: '⏰ منتهية'              },
+        'بانتظار الموافقة':    { cls: 'pill-pending',  dot: 'dot-pulse', label: '⏳ بانتظار الموافقة'    },
     };
-    const s   = statusMap[v.visit_status] || { cls: 'pill-pending', dot: '', label: v.visit_status || '—' };
-    const sw  = document.getElementById('vStatusWrap');
+    const s  = statusMap[v.visit_status] || { cls: 'pill-pending', dot: '', label: v.visit_status || '—' };
+    const sw = document.getElementById('vStatusWrap');
     sw.innerHTML = `<span class="status-pill ${s.cls}">
         <span class="dot ${s.dot}"></span>${s.label}
     </span>`;
 
-    // إظهار/إخفاء أزرار القبول والرفض
     const actionRow = document.getElementById('actionRow');
     const done = ['مرفوضة', 'منتهية', 'داخل الآن'].includes(v.visit_status);
     actionRow.style.display = done ? 'none' : 'grid';
@@ -993,11 +992,9 @@ function renderVisit(v) {
     if (done) {
         const msg = document.getElementById('actionMsg');
         msg.className   = 'action-msg ok';
-        msg.textContent = v.visit_status === 'مرفوضة'
-            ? '🚫 تم رفض هذه الزيارة مسبقاً'
-            : v.visit_status === 'منتهية'
-            ? '⏰ انتهت الزيارة'
-            : '🔵 الزائر داخل المجمع حالياً';
+        msg.textContent = v.visit_status === 'مرفوضة'  ? '🚫 تم رفض هذه الزيارة مسبقاً'
+                        : v.visit_status === 'منتهية'   ? '⏰ انتهت الزيارة'
+                        : '🔵 الزائر داخل المجمع حالياً';
         msg.style.display = 'block';
     }
 }
@@ -1025,27 +1022,27 @@ async function doAction(type) {
         );
 
         if (res.ok) {
-            msg.className   = 'action-msg ok';
-            msg.textContent = isAccept
+            msg.className     = 'action-msg ok';
+            msg.textContent   = isAccept
                 ? '✅ تم قبول الزيارة — يمكن لموظف الأمن تسجيل الدخول'
                 : '🚫 تم رفض الزيارة — سيُشعر موظف الأمن تلقائياً';
             msg.style.display = 'block';
             document.getElementById('actionRow').style.display = 'none';
             showToast(isAccept ? '✅ تم قبول الزيارة' : '🚫 تم رفض الزيارة',
                       isAccept ? 'success' : 'error');
-            // أعد تحميل البيانات لتحديث الحالة
             setTimeout(() => loadVisit(currentVisitId), 800);
         } else {
             const data = await res.json().catch(() => ({}));
-            msg.className   = 'action-msg err';
-            msg.textContent = '❌ ' + (data.message || 'فشلت العملية — حاول مجدداً');
+            msg.className     = 'action-msg err';
+            msg.textContent   = '❌ ' + (data.message || 'فشلت العملية — حاول مجدداً');
             msg.style.display = 'block';
             btnAccept.disabled = false;
             btnReject.disabled = false;
         }
-    } catch {
-        msg.className   = 'action-msg err';
-        msg.textContent = '❌ خطأ في الاتصال';
+    } catch(err) {
+        console.error('[doAction Error]', err);
+        msg.className     = 'action-msg err';
+        msg.textContent   = '❌ خطأ في الاتصال بالسيرفر';
         msg.style.display = 'block';
         btnAccept.disabled = false;
         btnReject.disabled = false;
@@ -1068,8 +1065,8 @@ async function submitReport() {
     msgEl.style.display = 'none';
 
     if (!notes) {
-        msgEl.className   = 'err';
-        msgEl.textContent = '❌ يرجى كتابة تفاصيل البلاغ';
+        msgEl.className     = 'err';
+        msgEl.textContent   = '❌ يرجى كتابة تفاصيل البلاغ';
         msgEl.style.display = 'block';
         return;
     }
@@ -1090,20 +1087,18 @@ async function submitReport() {
         msgEl.className     = res.ok ? 'ok' : 'err';
         msgEl.textContent   = res.ok ? `✅ ${data.message}` : `❌ ${data.message}`;
         msgEl.style.display = 'block';
-        if (res.ok) {
-            document.getElementById('reportNotes').value = '';
-            showToast('📋 تم إرسال البلاغ', 'info');
-        }
-    } catch {
+        if (res.ok) document.getElementById('reportNotes').value = '';
+    } catch(err) {
+        console.error('[submitReport Error]', err);
         msgEl.className     = 'err';
-        msgEl.textContent   = '❌ خطأ في الاتصال';
+        msgEl.textContent   = '❌ خطأ في الاتصال بالسيرفر';
         msgEl.style.display = 'block';
     }
 }
 
 // ══ Helpers ══
 function show(id) { document.getElementById(id).style.display = 'block'; }
-function hide(id) { document.getElementById(id).style.display = 'none'; }
+function hide(id) { document.getElementById(id).style.display = 'none';  }
 
 function showError(title, sub) {
     hide('loadingCard');
@@ -1127,8 +1122,9 @@ window.addEventListener('DOMContentLoaded', () => {
     if (URL_EMP && URL_NAME) {
         document.getElementById('empName').value = URL_NAME;
         document.getElementById('empCode').value = URL_EMP;
-        const bar  = document.getElementById('autoBar');
-        bar.querySelector('span').textContent = `جارٍ تسجيل الدخول بحساب: ${URL_NAME.split(' ')[0]}…`;
+        const bar = document.getElementById('autoBar');
+        document.getElementById('autoBarText').textContent =
+            `جارٍ تسجيل الدخول بحساب: ${URL_NAME.split(' ')[0]}…`;
         bar.classList.add('visible');
         setTimeout(login, 500);
     }
