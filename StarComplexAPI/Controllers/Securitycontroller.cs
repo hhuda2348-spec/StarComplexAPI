@@ -557,15 +557,16 @@ namespace StarComplexAPI.Controllers
             $"</style></head><body><h2>{msg}</h2></body></html>";
 
         // ══ استبدل دالة BuildQRPage القديمة بهذا الكود بالكامل ══
+        // ══ استبدل دالة BuildQRPage القديمة بهذا الكود بالكامل لتحصل على المظهر الداكن الفخم ══
         private static string BuildQRPage(
             Visit v, string status, string empName,
             string blockReason, string token, string name)
         {
             var (bgGradient, accentColor, statusIcon, statusAr) = status switch
             {
-                "APPROVED" => ("145deg, #1A0306 0%, #2D0B10 100%", "#22C55E", "✅", "مقبول — يُسمح بالدخول"),
-                "BLOCKED" => ("145deg, #1A0306 0%, #2D0B10 100%", "#EF4444", "🚫", "محظور — مرفوض أمنياً"),
-                _ => ("145deg, #1A0306 0%, #2D0B10 100%", "#F59E0B", "⏰", "منتهي الصلاحية"),
+                "APPROVED" => ("145deg, #160204 0%, #29070C 100%", "#22C55E", "✅", "مقبول — يُسمح بالدخول"),
+                "BLOCKED" => ("145deg, #160204 0%, #29070C 100%", "#EF4444", "🚫", "محظور — مرفوض أمنياً"),
+                _ => ("145deg, #160204 0%, #29070C 100%", "#F59E0B", "⏰", "منتهي الصلاحية"),
             };
 
             string extraRows = v.visitor_type == "خط نقل طلاب"
@@ -615,18 +616,17 @@ namespace StarComplexAPI.Controllers
                     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
                     :root{
                       --accent: {{accentColor}};
-                      --bg: #1A0306;
-                      --surface: #2D0B10;
-                      --panel: #3A1218;
-                      --card: #4A1A22;
-                      --border: #63222D;
+                      --bg: #0F0204;
+                      --surface: #1E0407;
+                      --panel: #2A080D;
+                      --card: #360D13;
+                      --border: #52131D;
                       --text: #FFFFFF;
-                      --muted: #E2D7D9;
-                      --faint: #561E26;
+                      --muted: #D9C3C6;
+                      --faint: #440F16;
                       --gold: #E5C158;
-                      --gold-dim: rgba(229,193,88,.15);
-                      --maroon: #8C2433;
-                      --maroon-glow: rgba(140,36,51,0.4);
+                      --gold-dim: rgba(229,193,88,.1);
+                      --maroon-glow: rgba(82,19,29,0.5);
                     }
                     body{
                       font-family:'Tajawal',sans-serif;
@@ -639,61 +639,61 @@ namespace StarComplexAPI.Controllers
                     }
                     body::before {
                       content: ''; position: fixed; inset: 0;
-                      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.15) 2px,rgba(0,0,0,.15) 4px);
+                      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.2) 2px,rgba(0,0,0,.2) 4px);
                       pointer-events: none; z-index: 0;
                     }
                     .card{
-                      width:100%;max-width:460px;
-                      background: linear-gradient(145deg, var(--card), var(--surface));
-                      border:2px solid var(--maroon);
+                      width:100%;max-width:450px;
+                      background: linear-gradient({{bgGradient}});
+                      border: 2px solid var(--border);
                       border-radius:24px;
                       overflow:hidden;
                       position: relative; z-index: 1;
-                      box-shadow: 0 10px 40px rgba(0,0,0,0.6), 0 0 25px var(--maroon-glow);
-                      animation:slideUp .45s cubic-bezier(.16,1,.3,1);
+                      box-shadow: 0 20px 50px rgba(0,0,0,0.7), 0 0 30px var(--maroon-glow);
+                      animation:slideUp .4s cubic-bezier(.16,1,.3,1);
                     }
-                    @keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)
+                    @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}
                     
                     .header{
-                      background: var(--surface);
+                      background: rgba(0, 0, 0, 0.2);
                       border-bottom:1px solid var(--border);
-                      padding:32px 24px 24px;
+                      padding:28px 24px;
                       text-align:center;
                     }
                     .status-icon{
-                      font-size:56px;display:block;margin-bottom:12px;
-                      filter:drop-shadow(0 0 12px var(--accent));
+                      font-size:52px;display:block;margin-bottom:10px;
+                      filter:drop-shadow(0 0 10px var(--accent));
                     }
                     .status-badge{
                       display:inline-block;
-                      background:rgba(255,255,255,0.06);
+                      background: var(--surface);
                       color: var(--text);
                       border:1px solid var(--accent);
-                      padding:8px 24px;border-radius:50px;
-                      font-size:15px;font-weight:800;
+                      padding:6px 20px;border-radius:50px;
+                      font-size:14px;font-weight:800;
+                      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
                     }
                     .permit-id{
-                      margin-top:12px;font-size:13px;color:var(--gold);
-                      font-weight: 700;
+                      margin-top:10px;font-size:12px;color:var(--gold);
+                      font-weight: 700;letter-spacing: 0.5px;
                     }
-                    .body{padding:24px}
+                    .body{padding:20px}
                     .section-title{
                       font-size:13px;font-weight:800;color:var(--gold);
-                      margin:0 0 14px;padding-bottom:8px;
+                      margin:0 0 12px;padding-bottom:6px;
                       border-bottom:1px solid var(--border);
                     }
-                    .rows{display:flex;flex-direction:column;gap:1px;margin-bottom:20px}
+                    .rows{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
                     .row{
                       display:flex;justify-content:space-between;align-items:center;
-                      padding:12px 14px;
+                      padding:12px 16px;
                       background: var(--panel);
-                      border-bottom: 1px solid var(--faint);
-                      transition:.15s;
+                      border: 1px solid var(--faint);
+                      border-radius: 12px;
+                      transition:.2s;
                     }
-                    .row:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
-                    .row:last-of-type { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; border-bottom: none; }
-                    .row:hover{background: var(--card)}
-                    .row.danger{background:rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.3);}
+                    .row:hover{background: var(--card); border-color: var(--border);}
+                    .row.danger{background:rgba(239,68,68,.12); border-color: rgba(239,68,68,.3);}
                     .lbl{font-size:13px;color:var(--muted); font-weight: 500;}
                     .val{font-size:14px;font-weight:700;color:var(--text)}
                     .val.accent{color:var(--gold); text-shadow: 0 0 8px rgba(229,193,88,0.2);}
@@ -701,89 +701,83 @@ namespace StarComplexAPI.Controllers
                     
                     .status-chip{
                       display:inline-flex;align-items:center;gap:6px;
-                      padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700;
-                      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+                      padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;
+                      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
                     }
                     .chip-accepted{background:rgba(34,197,94,.15);color:#22C55E;border:1px solid rgba(34,197,94,.4)}
                     .chip-inside  {background:rgba(59,130,246,.15);color:#3B82F6;border:1px solid rgba(59,130,246,.4)}
                     .chip-rejected{background:rgba(239,68,68,.15);color:#EF4444;border:1px solid rgba(239,68,68,.4)}
                     .chip-expired {background:rgba(245,158,11,.15);color:#F59E0B;border:1px solid rgba(245,158,11,.4)}
-                    .chip-default {background:var(--surface);color:var(--text);border:1px solid var(--border)}
                     
                     .divider{height:1px;background:var(--border);margin:4px 0 20px}
                     .action-result{
                       padding:14px;border-radius:12px;
-                      text-align:center;font-size:14px;font-weight:700;
+                      text-align:center;font-size:13px;font-weight:700;
                       display:none;margin-bottom:16px;
-                      box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
                     }
                     .action-result.ok {background:rgba(34,197,94,.15);color:#22C55E;border:1px solid rgba(34,197,94,.3)}
                     .action-result.err{background:rgba(239,68,68,.15);color:#EF4444;border:1px solid rgba(239,68,68,.3)}
                     
                     .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
                     .btn{
-                      height:52px;border:none;border-radius:14px;
-                      font-family:'Tajawal',sans-serif;font-size:15px;font-weight:700;
-                      cursor:pointer;transition:.25s ease;display:flex;align-items:center;
-                      justify-content:center;gap:8px;
+                      height:50px;border:none;border-radius:12px;
+                      font-family:'Tajawal',sans-serif;font-size:14px;font-weight:700;
+                      cursor:pointer;transition:.2s ease;display:flex;align-items:center;
+                      justify-content:center;gap:6px;
                     }
-                    .btn-icon{font-size:18px}
-                    .btn-accept{background:#22C55E;color:#000;box-shadow:0 4px 14px rgba(34,197,94,.3)}
-                    .btn-accept:hover:not(:disabled){background:#16A34A;transform:translateY(-1px);box-shadow:0 6px 20px rgba(34,197,94,.45)}
-                    .btn-reject{background:#EF4444;color:#fff;box-shadow:0 4px 14px rgba(239,68,68,.3)}
-                    .btn-reject:hover:not(:disabled){background:#DC2626;transform:translateY(-2px);box-shadow:0 6px 20px rgba(239,68,68,.45)}
+                    .btn-icon{font-size:16px}
+                    .btn-accept{background:#22C55E;color:#000;box-shadow:0 4px 12px rgba(34,197,94,.3)}
+                    .btn-accept:hover:not(:disabled){background:#16A34A;transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.45)}
+                    .btn-reject{background:#EF4444;color:#fff;box-shadow:0 4px 12px rgba(239,68,68,.3)}
+                    .btn-reject:hover:not(:disabled){background:#DC2626;transform:translateY(-1px);box-shadow:0 6px 16px rgba(239,68,68,.45)}
                     .btn:disabled{opacity:.35;cursor:not-allowed;transform:none!important}
                     
                     .report-wrap{
                       background: var(--surface);
-                      border:1px solid var(--border);
-                      border-radius:18px;padding:20px;
-                      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                      border:1px solid var(--faint);
+                      border-radius:16px;padding:16px;
                     }
-                    .report-title{font-size:14px;font-weight:800;color:var(--amber);margin-bottom:14px;
-                                  display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--faint); padding-bottom:8px;}
+                    .report-title{font-size:13px;font-weight:800;color:var(--amber);margin-bottom:12px;
+                                  display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--faint); padding-bottom:6px;}
                     #reportNotes{
-                      width:100%;height:84px;
+                      width:100%;height:80px;
                       background:var(--panel);
                       border:1px solid var(--border);
                       border-radius:10px;color:var(--text);
                       font-family:'Tajawal',sans-serif;font-size:13px;
                       padding:12px;resize:none;outline:none;
-                      transition:.2s ease;
                     }
                     #reportNotes:focus{border-color:var(--gold);background:var(--card);box-shadow:0 0 0 3px var(--gold-dim)}
-                    #reportNotes::placeholder{color:rgba(255,255,255,0.4)}
+                    #reportNotes::placeholder{color:rgba(255,255,255,0.3)}
                     #reportSeverity{
-                      width:100%;margin-top:10px;padding:10px 12px;
+                      width:100%;margin-top:10px;padding:10px;
                       background:var(--panel);border:1px solid var(--border);
                       border-radius:10px;color:var(--text);
                       font-family:'Tajawal',sans-serif;font-size:13px;outline:none;
                     }
                     .btn-report{
-                      width:100%;height:46px;margin-top:14px;
-                      border:none;border-radius:12px;
+                      width:100%;height:44px;margin-top:12px;
+                      border:none;border-radius:10px;
                       background:linear-gradient(135deg, #E5C158, #AA8417);
                       color:#000;font-family:'Tajawal',sans-serif;
-                      font-size:14px;font-weight:700;cursor:pointer;transition:.25s ease;
-                      box-shadow: 0 4px 12px rgba(229,193,88,.2);
+                      font-size:14px;font-weight:700;cursor:pointer;transition:.2s ease;
                     }
-                    .btn-report:hover{box-shadow:0 6px 18px rgba(229,193,88,.4);transform:translateY(-1px)}
-                    #reportMsg{font-size:12px;margin-top:10px;display:none;
-                               text-align:center;font-weight:700;padding:10px;border-radius:8px}
-                    #reportMsg.ok {background:rgba(34,197,94,.15);color:#22C55E;border:1px solid rgba(34,197,94,.2)}
-                    #reportMsg.err{background:rgba(239,68,68,.15);color:#EF4444;border:1px solid rgba(239,68,68,.2)}
+                    .btn-report:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(229,193,88,.3)}
+                    #reportMsg{font-size:12px;margin-top:10px;display:none;text-align:center;font-weight:700;padding:8px;border-radius:8px}
+                    #reportMsg.ok {background:rgba(34,197,94,.15);color:#22C55E}
+                    #reportMsg.err{background:rgba(239,68,68,.15);color:#EF4444}
                     
                     .footer{
-                      margin-top:24px;padding-top:16px;
+                      margin-top:20px;padding-top:14px;
                       border-top:1px solid var(--border);
                       display:flex;justify-content:space-between;
-                      font-size:12px;color:var(--muted); font-weight: 500;
+                      font-size:11px;color:var(--muted);
                     }
                     .security-note{
-                      margin-top:16px;padding:10px 12px;
+                      margin-top:14px;padding:10px;
                       background: var(--panel);
-                      border:1px solid var(--border);
-                      border-radius:10px;font-size:12px;color:var(--gold);
+                      border:1px solid var(--faint);
+                      border-radius:10px;font-size:11px;color:var(--gold);
                       text-align:center;font-weight: 600;
                     }
                   </style>
@@ -860,73 +854,60 @@ namespace StarComplexAPI.Controllers
                       return `<span class="status-chip ${cls}">${lbl}</span>`;
                     }
 
-                    document.getElementById('statusChip').innerHTML =
-                      getStatusChip('{{visitStatus}}');
+                    document.getElementById('statusChip').innerHTML = getStatusChip('{{visitStatus}}');
 
                     async function recordAction(type) {
                       const isEntry  = type === 'entry';
                       const endpoint = isEntry ? 'RecordEntry' : 'RejectVisit';
-                      const url      = `/api/Security/${endpoint}/${VISIT_ID}`
-                                     + `?employeeCode=${encodeURIComponent(TOKEN)}`
-                                     + `&employeeFullName=${encodeURIComponent(EMP_NAME)}`;
-
+                      const url      = `/api/Security/${endpoint}/${VISIT_ID}?employeeCode=${encodeURIComponent(TOKEN)}&employeeFullName=${encodeURIComponent(EMP_NAME)}`;
                       const btnRow   = document.querySelector('.btn-row');
                       const resultEl = document.getElementById('actionResult');
-                      if (btnRow) btnRow.querySelectorAll('.btn')
-                        .forEach(b => { b.disabled = true; b.textContent = 'جارٍ التنفيذ…'; });
+                      
+                      if (btnRow) btnRow.querySelectorAll('.btn').forEach(b => { b.disabled = true; b.textContent = 'جارٍ التنفيذ…'; });
 
                       try {
                         const res  = await fetch(url, { method: 'POST' });
                         const data = await res.json();
                         if (res.ok) {
                           resultEl.className   = 'action-result ok';
-                          resultEl.textContent = isEntry
-                            ? '✅ تم قبول الزيارة — سيُشعر موظف الأمن تلقائياً'
-                            : '🚫 تم رفض الزيارة — سيُشعر موظف الأمن تلقائياً';
+                          resultEl.textContent = isEntry ? '✅ تم قبول الدخول بنجاح' : '🚫 تم رفض الدخول';
                           resultEl.style.display = 'block';
                           if (btnRow) btnRow.style.display = 'none';
-                          document.getElementById('statusChip').innerHTML =
-                            getStatusChip(isEntry ? 'داخل الآن' : 'مرفوضة');
+                          document.getElementById('statusChip').innerHTML = getStatusChip(isEntry ? 'داخل الآن' : 'مرفوضة');
                         } else {
                           resultEl.className     = 'action-result err';
                           resultEl.textContent   = '❌ ' + (data.message || 'فشلت العملية');
                           resultEl.style.display = 'block';
-                          if (btnRow) btnRow.querySelectorAll('.btn').forEach(b => {
-                            b.disabled = false;
-                            b.innerHTML = b.classList.contains('btn-accept')
-                              ? '<span class="btn-icon">✅</span>قبول الدخول'
-                              : '<span class="btn-icon">🚫</span>رفض الدخول';
-                          });
+                          resetBtns(btnRow);
                         }
                       } catch {
                         resultEl.className     = 'action-result err';
                         resultEl.textContent   = '❌ خطأ في الاتصال بالسيرفر';
                         resultEl.style.display = 'block';
-                        if (btnRow) btnRow.querySelectorAll('.btn').forEach(b => {
-                          b.disabled = false;
-                          b.innerHTML = b.classList.contains('btn-accept')
-                            ? '<span class="btn-icon">✅</span>قبول الدخول'
-                              : '<span class="btn-icon">🚫</span>رفض الدخول';
-                        });
+                        resetBtns(btnRow);
                       }
+                    }
+
+                    function resetBtns(btnRow) {
+                      if (!btnRow) return;
+                      btnRow.querySelectorAll('.btn').forEach(b => {
+                        b.disabled = false;
+                        b.innerHTML = b.classList.contains('btn-accept') 
+                          ? '<span class="btn-icon">✅</span>قبول الدخول' 
+                          : '<span class="btn-icon">🚫</span>رفض الدخول';
+                      });
                     }
 
                     async function submitReport() {
                       const notes    = document.getElementById('reportNotes').value.trim();
                       const severity = document.getElementById('reportSeverity').value;
                       const msgEl    = document.getElementById('reportMsg');
-                      if (!notes) {
-                        msgEl.className = 'err'; msgEl.style.display = 'block';
-                        msgEl.textContent = '❌ يرجى كتابة تفاصيل البلاغ'; return;
-                      }
+                      if (!notes) { msgEl.className = 'err'; msgEl.style.display = 'block'; msgEl.textContent = '❌ يرجى كتابة تفاصيل البلاغ'; return; }
                       try {
                         const res  = await fetch('/api/Security/SubmitReport', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            employeeCode: TOKEN, employeeFullName: EMP_NAME,
-                            visitId: VISIT_ID, notes, severity
-                          })
+                          body: JSON.stringify({ employeeCode: TOKEN, employeeFullName: EMP_NAME, visitId: VISIT_ID, notes, severity })
                         });
                         const data = await res.json();
                         msgEl.className     = res.ok ? 'ok' : 'err';
@@ -934,8 +915,7 @@ namespace StarComplexAPI.Controllers
                         msgEl.textContent   = res.ok ? '✅ ' + data.message : '❌ ' + data.message;
                         if (res.ok) document.getElementById('reportNotes').value = '';
                       } catch {
-                        msgEl.className = 'err'; msgEl.style.display = 'block';
-                        msgEl.textContent = '❌ خطأ في الاتصال';
+                        msgEl.className = 'err'; msgEl.style.display = 'block'; msgEl.textContent = '❌ خطأ في الاتصال';
                       }
                     }
                   </script>
