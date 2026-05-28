@@ -558,15 +558,16 @@ namespace StarComplexAPI.Controllers
 
         // ══ استبدل دالة BuildQRPage القديمة بهذا الكود بالكامل ══
         // ══ استبدل دالة BuildQRPage القديمة بهذا الكود بالكامل لتحصل على المظهر الداكن الفخم ══
+        // ══ دالة BuildQRPage المحدثة بالكامل: بدون المربع الكبير وببوكسات شفافة ومكبرة فخمة ══
         private static string BuildQRPage(
             Visit v, string status, string empName,
             string blockReason, string token, string name)
         {
-            var (bgGradient, accentColor, statusIcon, statusAr) = status switch
+            var (accentColor, statusIcon, statusAr) = status switch
             {
-                "APPROVED" => ("145deg, #160204 0%, #29070C 100%", "#22C55E", "✅", "مقبول — يُسمح بالدخول"),
-                "BLOCKED" => ("145deg, #160204 0%, #29070C 100%", "#EF4444", "🚫", "محظور — مرفوض أمنياً"),
-                _ => ("145deg, #160204 0%, #29070C 100%", "#F59E0B", "⏰", "منتهي الصلاحية"),
+                "APPROVED" => ("#22C55E", "✅", "مقبول — يُسمح بالدخول"),
+                "BLOCKED" => ("#EF4444", "🚫", "محظور — مرفوض أمنياً"),
+                _ => ("#F59E0B", "⏰", "منتهي الصلاحية"),
             };
 
             string extraRows = v.visitor_type == "خط نقل طلاب"
@@ -617,227 +618,233 @@ namespace StarComplexAPI.Controllers
                     :root{
                       --accent: {{accentColor}};
                       --bg: #0F0204;
-                      --surface: #1E0407;
-                      --panel: #2A080D;
-                      --card: #360D13;
+                      --surface: rgba(30, 4, 7, 0.8);
+                      --panel: rgba(42, 8, 13, 0.6);
+                      --card: rgba(54, 13, 19, 0.7);
                       --border: #52131D;
                       --text: #FFFFFF;
-                      --muted: #D9C3C6;
-                      --faint: #440F16;
+                      --muted: #E2D7D9;
+                      --faint: rgba(82, 19, 29, 0.4);
                       --gold: #E5C158;
-                      --gold-dim: rgba(229,193,88,.1);
-                      --maroon-glow: rgba(82,19,29,0.5);
+                      --gold-dim: rgba(229,193,88,.15);
                     }
                     body{
                       font-family:'Tajawal',sans-serif;
                       background: var(--bg);
                       color: var(--text);
                       min-height:100vh;
-                      display:flex;align-items:center;justify-content:center;
-                      padding:16px;
+                      padding: 24px 16px;
                       -webkit-font-smoothing: antialiased;
+                      display: flex;
+                      flex-direction: column;
+                      align-items: center;
                     }
                     body::before {
                       content: ''; position: fixed; inset: 0;
-                      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.2) 2px,rgba(0,0,0,.2) 4px);
+                      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.15) 2px,rgba(0,0,0,.15) 4px);
                       pointer-events: none; z-index: 0;
                     }
-                    .card{
-                      width:100%;max-width:450px;
-                      background: linear-gradient({{bgGradient}});
-                      border: 2px solid var(--border);
-                      border-radius:24px;
-                      overflow:hidden;
-                      position: relative; z-index: 1;
-                      box-shadow: 0 20px 50px rgba(0,0,0,0.7), 0 0 30px var(--maroon-glow);
-                      animation:slideUp .4s cubic-bezier(.16,1,.3,1);
-                    }
-                    @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}
                     
+                    /* تم إلغاء المربع الكبير المقيد وجعل الحاوية ممتدة واحترافية */
+                    .main-container {
+                      width: 100%;
+                      max-width: 600px;
+                      position: relative;
+                      z-index: 1;
+                      animation: fadeIn .4s ease-out;
+                    }
+                    @keyframes fadeIn{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:translateY(0)}
+
                     .header{
-                      background: rgba(0, 0, 0, 0.2);
-                      border-bottom:1px solid var(--border);
-                      padding:28px 24px;
+                      padding: 20px 10px 32px;
                       text-align:center;
                     }
                     .status-icon{
-                      font-size:52px;display:block;margin-bottom:10px;
-                      filter:drop-shadow(0 0 10px var(--accent));
+                      font-size: 64px; display:block; margin-bottom:14px;
+                      filter:drop-shadow(0 0 15px var(--accent));
                     }
                     .status-badge{
                       display:inline-block;
                       background: var(--surface);
                       color: var(--text);
-                      border:1px solid var(--accent);
-                      padding:6px 20px;border-radius:50px;
-                      font-size:14px;font-weight:800;
-                      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+                      border: 2px solid var(--accent);
+                      padding: 10px 28px; border-radius: 50px;
+                      font-size: 16px; font-weight: 800;
+                      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
                     }
                     .permit-id{
-                      margin-top:10px;font-size:12px;color:var(--gold);
-                      font-weight: 700;letter-spacing: 0.5px;
+                      margin-top: 14px; font-size: 14px; color: var(--gold);
+                      font-weight: 700; letter-spacing: 0.5px;
                     }
-                    .body{padding:20px}
+
                     .section-title{
-                      font-size:13px;font-weight:800;color:var(--gold);
-                      margin:0 0 12px;padding-bottom:6px;
-                      border-bottom:1px solid var(--border);
+                      font-size: 14px; font-weight: 800; color: var(--gold);
+                      margin: 10px 0 16px; padding-bottom: 8px;
+                      border-bottom: 2px solid var(--border);
                     }
-                    .rows{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+                    
+                    /* بوكسات شفافة، مكبرة، ومتباعدة بشكل احترافي */
+                    .rows{display:flex;flex-direction:column;gap:12px;margin-bottom:24px}
                     .row{
-                      display:flex;justify-content:space-between;align-items:center;
-                      padding:12px 16px;
+                      display:flex; justify-content:space-between; align-items:center;
+                      padding: 18px 20px;
                       background: var(--panel);
                       border: 1px solid var(--faint);
-                      border-radius: 12px;
-                      transition:.2s;
+                      border-radius: 16px;
+                      backdrop-filter: blur(4px);
+                      transition: all .25s ease;
                     }
-                    .row:hover{background: var(--card); border-color: var(--border);}
-                    .row.danger{background:rgba(239,68,68,.12); border-color: rgba(239,68,68,.3);}
-                    .lbl{font-size:13px;color:var(--muted); font-weight: 500;}
-                    .val{font-size:14px;font-weight:700;color:var(--text)}
-                    .val.accent{color:var(--gold); text-shadow: 0 0 8px rgba(229,193,88,0.2);}
-                    .val.car{font-family:inherit;}
+                    .row:hover{
+                      background: var(--card); 
+                      border-color: var(--border);
+                      transform: scale(1.01);
+                    }
+                    .row.danger{background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.3);}
+                    .lbl{font-size: 14px; color: var(--muted); font-weight: 600;}
+                    .val{font-size: 16px; font-weight: 700; color: var(--text)}
+                    .val.accent{color: var(--gold); text-shadow: 0 0 8px rgba(229,193,88,0.3);}
                     
                     .status-chip{
-                      display:inline-flex;align-items:center;gap:6px;
-                      padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;
-                      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                      display:inline-flex; align-items:center; gap:6px;
+                      padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 700;
+                      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
                     }
-                    .chip-accepted{background:rgba(34,197,94,.15);color:#22C55E;border:1px solid rgba(34,197,94,.4)}
-                    .chip-inside  {background:rgba(59,130,246,.15);color:#3B82F6;border:1px solid rgba(59,130,246,.4)}
-                    .chip-rejected{background:rgba(239,68,68,.15);color:#EF4444;border:1px solid rgba(239,68,68,.4)}
-                    .chip-expired {background:rgba(245,158,11,.15);color:#F59E0B;border:1px solid rgba(245,158,11,.4)}
+                    .chip-accepted{background:rgba(34,197,94,.2); color:#22C55E; border:1px solid rgba(34,197,94,.5)}
+                    .chip-inside  {background:rgba(59,130,246,.2); color:#3B82F6; border:1px solid rgba(59,130,246,.5)}
+                    .chip-rejected{background:rgba(239,68,68,.2); color:#EF4444; border:1px solid rgba(239,68,68,.5)}
+                    .chip-expired {background:rgba(245,158,11,.2); color:#F59E0B; border:1px solid rgba(245,158,11,.5)}
                     
-                    .divider{height:1px;background:var(--border);margin:4px 0 20px}
                     .action-result{
-                      padding:14px;border-radius:12px;
-                      text-align:center;font-size:13px;font-weight:700;
-                      display:none;margin-bottom:16px;
+                      padding: 16px; border-radius: 14px;
+                      text-align:center; font-size: 14px; font-weight: 700;
+                      display:none; margin-bottom: 20px;
                     }
-                    .action-result.ok {background:rgba(34,197,94,.15);color:#22C55E;border:1px solid rgba(34,197,94,.3)}
-                    .action-result.err{background:rgba(239,68,68,.15);color:#EF4444;border:1px solid rgba(239,68,68,.3)}
+                    .action-result.ok {background:rgba(34,197,94,.15); color:#22C55E; border:1px solid rgba(34,197,94,.3)}
+                    .action-result.err{background:rgba(239,68,68,.15); color:#EF4444; border:1px solid rgba(239,68,68,.3)}
                     
-                    .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+                    .btn-row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom: 24px}
                     .btn{
-                      height:50px;border:none;border-radius:12px;
-                      font-family:'Tajawal',sans-serif;font-size:14px;font-weight:700;
-                      cursor:pointer;transition:.2s ease;display:flex;align-items:center;
-                      justify-content:center;gap:6px;
+                      height: 54px; border:none; border-radius: 16px;
+                      font-family:'Tajawal',sans-serif; font-size: 15px; font-weight: 700;
+                      cursor:pointer; transition:.2s ease; display:flex; align-items:center;
+                      justify-content:center; gap:8px;
                     }
-                    .btn-icon{font-size:16px}
-                    .btn-accept{background:#22C55E;color:#000;box-shadow:0 4px 12px rgba(34,197,94,.3)}
-                    .btn-accept:hover:not(:disabled){background:#16A34A;transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.45)}
-                    .btn-reject{background:#EF4444;color:#fff;box-shadow:0 4px 12px rgba(239,68,68,.3)}
-                    .btn-reject:hover:not(:disabled){background:#DC2626;transform:translateY(-1px);box-shadow:0 6px 16px rgba(239,68,68,.45)}
-                    .btn:disabled{opacity:.35;cursor:not-allowed;transform:none!important}
+                    .btn-accept{background:#22C55E; color:#000; box-shadow:0 4px 14px rgba(34,197,94,.3)}
+                    .btn-accept:hover:not(:disabled){background:#16A34A; transform:translateY(-1px); box-shadow:0 6px 18px rgba(34,197,94,.45)}
+                    .btn-reject{background:#EF4444; color:#fff; box-shadow:0 4px 14px rgba(239,68,68,.3)}
+                    .btn-reject:hover:not(:disabled){background:#DC2626; transform:translateY(-1px); box-shadow:0 6px 18px rgba(239,68,68,.45)}
+                    .btn:disabled{opacity:.35; cursor:not-allowed; transform:none!important}
                     
                     .report-wrap{
                       background: var(--surface);
-                      border:1px solid var(--faint);
-                      border-radius:16px;padding:16px;
+                      border: 1px solid var(--border);
+                      border-radius: 20px; padding: 20px;
+                      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
                     }
-                    .report-title{font-size:13px;font-weight:800;color:var(--amber);margin-bottom:12px;
-                                  display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--faint); padding-bottom:6px;}
+                    .report-title{font-size: 14px; font-weight: 800; color: var(--amber); margin-bottom: 14px;
+                                  display:flex; align-items:center; gap:6px; border-bottom: 1px solid var(--border); padding-bottom: 8px;}
                     #reportNotes{
-                      width:100%;height:80px;
-                      background:var(--panel);
-                      border:1px solid var(--border);
-                      border-radius:10px;color:var(--text);
-                      font-family:'Tajawal',sans-serif;font-size:13px;
-                      padding:12px;resize:none;outline:none;
+                      width:100%; height: 90px;
+                      background: var(--panel);
+                      border: 1px solid var(--border);
+                      border-radius: 12px; color: var(--text);
+                      font-family:'Tajawal',sans-serif; font-size: 14px;
+                      padding: 14px; resize:none; outline:none;
                     }
-                    #reportNotes:focus{border-color:var(--gold);background:var(--card);box-shadow:0 0 0 3px var(--gold-dim)}
+                    #reportNotes:focus{border-color:var(--gold); background:var(--card); box-shadow:0 0 0 3px var(--gold-dim)}
                     #reportNotes::placeholder{color:rgba(255,255,255,0.3)}
                     #reportSeverity{
-                      width:100%;margin-top:10px;padding:10px;
-                      background:var(--panel);border:1px solid var(--border);
-                      border-radius:10px;color:var(--text);
-                      font-family:'Tajawal',sans-serif;font-size:13px;outline:none;
+                      width:100%; margin-top: 12px; padding: 12px;
+                      background: var(--panel); border: 1px solid var(--border);
+                      border-radius: 12px; color: var(--text);
+                      font-family:'Tajawal',sans-serif; font-size: 14px; outline:none;
                     }
                     .btn-report{
-                      width:100%;height:44px;margin-top:12px;
-                      border:none;border-radius:10px;
-                      background:linear-gradient(135deg, #E5C158, #AA8417);
-                      color:#000;font-family:'Tajawal',sans-serif;
-                      font-size:14px;font-weight:700;cursor:pointer;transition:.2s ease;
+                      width:100%; height: 48px; margin-top: 16px;
+                      border:none; border-radius: 12px;
+                      background: linear-gradient(135deg, #E5C158, #AA8417);
+                      color:#000; font-family:'Tajawal',sans-serif;
+                      font-size: 15px; font-weight: 700; cursor:pointer; transition:.2s ease;
                     }
-                    .btn-report:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(229,193,88,.3)}
-                    #reportMsg{font-size:12px;margin-top:10px;display:none;text-align:center;font-weight:700;padding:8px;border-radius:8px}
-                    #reportMsg.ok {background:rgba(34,197,94,.15);color:#22C55E}
-                    #reportMsg.err{background:rgba(239,68,68,.15);color:#EF4444}
+                    .btn-report:hover{transform:translateY(-1px); box-shadow:0 4px 14px rgba(229,193,88,.4)}
+                    #reportMsg{font-size:13px; margin-top:12px; display:none; text-align:center; font-weight:700; padding:10px; border-radius:8px}
+                    #reportMsg.ok {background:rgba(34,197,94,.15); color:#22C55E}
+                    #reportMsg.err{background:rgba(239,68,68,.15); color:#EF4444}
                     
                     .footer{
-                      margin-top:20px;padding-top:14px;
-                      border-top:1px solid var(--border);
-                      display:flex;justify-content:space-between;
-                      font-size:11px;color:var(--muted);
+                      margin-top: 28px; padding-top: 16px;
+                      border-top: 1px solid var(--border);
+                      display:flex; justify-content:space-between;
+                      font-size: 13px; color: var(--muted);
                     }
                     .security-note{
-                      margin-top:14px;padding:10px;
+                      margin-top: 18px; padding: 12px;
                       background: var(--panel);
-                      border:1px solid var(--faint);
-                      border-radius:10px;font-size:11px;color:var(--gold);
-                      text-align:center;font-weight: 600;
+                      border: 1px solid var(--faint);
+                      border-radius: 12px; font-size: 12px; color: var(--gold);
+                      text-align:center; font-weight: 600;
                     }
                   </style>
                 </head>
                 <body>
-                  <div class="card">
+                  <div class="main-container">
                     <div class="header">
                       <span class="status-icon">{{statusIcon}}</span>
                       <div class="status-badge">{{statusAr}}</div>
                       <div class="permit-id">🔐 رقم التصريح: #{{visitIdStr}}</div>
                     </div>
-                    <div class="body">
-                      <div class="section-title">📋 بيانات الزائر</div>
-                      <div class="rows">
-                        <div class="row">
-                          <span class="lbl">اسم الزائر</span>
-                          <span class="val">{{visitorName}}</span>
-                        </div>
-                        <div class="row">
-                          <span class="lbl">نوع الزيارة</span>
-                          <span class="val">{{visitorType}}</span>
-                        </div>
-                        <div class="row">
-                          <span class="lbl">رقم الوحدة</span>
-                          <span class="val accent">{{unitId}}</span>
-                        </div>
-                        {{extraRows}}
-                        {{blacklistRow}}
-                        <div class="row">
-                          <span class="lbl">الحالة</span>
-                          <span id="statusChip">{{visitStatus}}</span>
-                        </div>
-                        <div class="row">
-                          <span class="lbl">صالح حتى</span>
-                          <span class="val">{{expiryFormatted}}</span>
-                        </div>
+
+                    <div class="section-title">📋 بيانات الزائر</div>
+                    <div class="rows">
+                      <div class="row">
+                        <span class="lbl">اسم الزائر</span>
+                        <span class="val">{{visitorName}}</span>
                       </div>
-                      <div class="divider"></div>
-                      <div class="action-result" id="actionResult"></div>
-                      {{actionButtons}}
-                      <div class="report-wrap">
-                        <div class="report-title">📋 إرسال بلاغ أمني</div>
-                        <textarea id="reportNotes" placeholder="اكتب تفاصيل البلاغ أو الملاحظة الأمنية…"></textarea>
-                        <select id="reportSeverity">
-                          <option value="INFO">معلومة</option>
-                          <option value="WARNING" selected>⚠️ تحذير</option>
-                          <option value="REJECTED">🚨 خطر</option>
-                        </select>
-                        <button class="btn-report" onclick="submitReport()">📤 إرسال البلاغ</button>
-                        <div id="reportMsg"></div>
+                      <div class="row">
+                        <span class="lbl">نوع الزيارة</span>
+                        <span class="val">{{visitorType}}</span>
                       </div>
-                      <div class="security-note">
-                        🔒 هذه البيانات متاحة فقط لموظفي الأمن المصرح لهم
+                      <div class="row">
+                        <span class="lbl">رقم الوحدة</span>
+                        <span class="val accent">{{unitId}}</span>
                       </div>
-                      <div class="footer">
-                        <span>👤 {{empName}}</span>
-                        <span>🕐 {{nowFmt}}</span>
+                      {{extraRows}}
+                      {{blacklistRow}}
+                      <div class="row">
+                        <span class="lbl">الحالة</span>
+                        <span id="statusChip">{{visitStatus}}</span>
+                      </div>
+                      <div class="row">
+                        <span class="lbl">صالح حتى</span>
+                        <span class="val">{{expiryFormatted}}</span>
                       </div>
                     </div>
+
+                    <div class="action-result" id="actionResult"></div>
+                    {{actionButtons}}
+
+                    <div class="report-wrap">
+                      <div class="report-title">📋 إرسال بلاغ أمني</div>
+                      <textarea id="reportNotes" placeholder="اكتب تفاصيل البلاغ أو الملاحظة الأمنية…"></textarea>
+                      <select id="reportSeverity">
+                        <option value="INFO">معلومة</option>
+                        <option value="WARNING" selected>⚠️ تحذير</option>
+                        <option value="REJECTED">🚨 خطر</option>
+                      </select>
+                      <button class="btn-report" onclick="submitReport()">📤 إرسال البلاغ</button>
+                      <div id="reportMsg"></div>
+                    </div>
+
+                    <div class="security-note">
+                      🔒 هذه البيانات متاحة فقط لموظفي الأمن المصرح لهم
+                    </div>
+
+                    <div class="footer">
+                      <span>👤 {{empName}}</span>
+                      <span>🕐 {{nowFmt}}</span>
+                    </div>
                   </div>
+
                   <script>
                     const VISIT_ID = {{visitIdStr}};
                     const TOKEN    = '{{tokenJs}}';
