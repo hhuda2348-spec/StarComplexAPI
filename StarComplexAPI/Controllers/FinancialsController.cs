@@ -212,7 +212,7 @@ namespace StarComplexAPI.Controllers
                     {
                         PaymentId = p.payment_id,
                         UnitId = p.unit_id,
-                        ServiceId = p.service_id,
+                        ServiceId = (int)p.service_id,
                         ServicePrice = p.ServicePrice,
                         Description = p.ServiceName ?? "خدمة",
                         TotalFee = $"{p.total_service_fee:N0} IQD",
@@ -325,7 +325,7 @@ namespace StarComplexAPI.Controllers
                         ServiceId = rentServiceId,
                         ServiceName = "الإيجار الشهري",
                         Amount = $"{(paid ? pay!.total_service_fee : monthlyRent):N0} IQD",
-                        AmountRaw = paid ? pay!.total_service_fee : monthlyRent,
+                        AmountRaw = (decimal)(paid ? pay!.total_service_fee : monthlyRent),
                         PaymentId = paid ? pay!.payment_id : 0,
                         EmployeeName = paid ? pay!.EmployeeName : "—",
                         DateLabel = paid ? pay!.payment_date.ToString("yyyy-MM-dd") : "—",
@@ -360,7 +360,7 @@ namespace StarComplexAPI.Controllers
                             ServiceId = internetServiceId,
                             ServiceName = internetService?.service_name ?? "الانترنت",
                             Amount = $"{(paid ? pay!.total_service_fee : internetPrice):N0} IQD",
-                            AmountRaw = paid ? pay!.total_service_fee : internetPrice,
+                            AmountRaw = (decimal)(paid ? pay!.total_service_fee : internetPrice),
                             PaymentId = paid ? pay!.payment_id : 0,
                             EmployeeName = paid ? pay!.EmployeeName : "—",
                             DateLabel = paid ? pay!.payment_date.ToString("yyyy-MM-dd") : "—",
@@ -415,7 +415,7 @@ namespace StarComplexAPI.Controllers
                         Amount = paid
                             ? $"{matchedPay!.total_service_fee:N0} IQD"
                             : $"{m.SvcPrice:N0} IQD",
-                        AmountRaw = paid ? matchedPay!.total_service_fee : m.SvcPrice,
+                        AmountRaw = (decimal)(paid ? matchedPay!.total_service_fee : m.SvcPrice),
                         PaymentId = paid ? matchedPay!.payment_id : 0,
                         EmployeeName = paid ? matchedPay!.EmployeeName : "—",
                         DateLabel = m.request_date.ToString("yyyy-MM-dd"),
@@ -483,7 +483,7 @@ namespace StarComplexAPI.Controllers
                 {
                     PaymentId = p.payment_id,
                     UnitId = p.unit_id,
-                    ServiceId = p.service_id,
+                    ServiceId = (int)p.service_id,
                     ServicePrice = p.ServicePrice,
                     Description = p.ServiceName,
                     TotalFee = $"{p.total_service_fee:N0} IQD",

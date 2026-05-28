@@ -76,9 +76,9 @@ namespace StarComplexAPI.Controllers
 
                     bills.Add(new BillItem
                     {
-                        service_id = p.service_id,
+                        service_id = (int)p.service_id,
                         service_name = svc.service_name,
-                        amount = p.total_service_fee,
+                        amount = (decimal)p.total_service_fee,
                         month = new DateTime(p.payment_date.Year, p.payment_date.Month, 1),
                         month_label = p.payment_date.ToString("MMMM yyyy"),
                         is_paid = true,
@@ -110,7 +110,7 @@ namespace StarComplexAPI.Controllers
                     {
                         service_id = req.service_id,
                         service_name = "صيانة: " + svc.service_name,
-                        amount = isPaid ? matchedPayment!.total_service_fee : svc.service_price,
+                        amount = (decimal)(isPaid ? matchedPayment!.total_service_fee : svc.service_price),
                         month = new DateTime(req.request_date.Year, req.request_date.Month, 1),
                         month_label = req.request_date.ToString("MMMM yyyy"),
                         is_paid = isPaid,
