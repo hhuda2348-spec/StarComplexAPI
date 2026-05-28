@@ -5,9 +5,6 @@ using StarComplexAPI.Models;
 
 namespace StarComplexAPI.Controllers
 {
-    // ══════════════════════════════════════════════════════════════
-    //  Response DTOs
-    // ══════════════════════════════════════════════════════════════
     public class DashboardKpiDto
     {
         public int TotalResidents { get; set; }
@@ -118,7 +115,6 @@ namespace StarComplexAPI.Controllers
 
     public class ApproveVisitRequest
     {
-        // ✅ visit_id هو nullable int في الموديل
         public int VisitId { get; set; }
         public string NewStatus { get; set; } = "مقبولة";
         public DateTime? ExpiryDate { get; set; }
@@ -128,7 +124,6 @@ namespace StarComplexAPI.Controllers
     {
         public int UnitId { get; set; }
         public int ServiceId { get; set; }
-        // ✅ الحالة الافتراضية الصحيحة من الموديل هي "قيد الانتظار" وليس "مفتوح"
         public string? RequestStatus { get; set; } = "قيد الانتظار";
         public string? Feedback { get; set; }
     }
@@ -147,10 +142,6 @@ namespace StarComplexAPI.Controllers
 
         public AdminDashboardController(StarComplexContext db) => _db = db;
 
-        // ══════════════════════════════════════════════════════════
-        //  1. KPI
-        //     GET api/admindashboard/kpi/{employeeId}
-        // ══════════════════════════════════════════════════════════
         [HttpGet("kpi/{employeeId}")]
         public async Task<ActionResult<DashboardResponseDto>> GetKpi(int employeeId)
         {
@@ -161,44 +152,36 @@ namespace StarComplexAPI.Controllers
             var familyTask = _db.FamilyMembers.CountAsync();
             var occupiedTask = _db.HousingUnits.CountAsync(u => u.unit_status == "مشغول");
             var totalUnitsTask = _db.HousingUnits.CountAsync();
-
-            // ✅ visit_id و unit_id هما nullable — المقارنة تعمل بشكل طبيعي مع EF
             var pendingVisitsTask = _db.Visits.CountAsync(v => v.visit_status == "معلقة");
             var todayVisitsTask = _db.Visits.CountAsync(v =>
                 v.visit_date.HasValue && v.visit_date.Value.Date == DateTime.Today);
-
-            // ✅ الحالتان الصحيحتان من موديل MaintenanceRequest
             var openMaintTask = _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد الانتظار");
             var inProgressTask = _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
-
             var totalPayCountTask = _db.FinancialPayments.CountAsync();
-
-            // ✅ total_service_fee هو decimal? — نتعامل مع null بـ ?? 0
-            var totalRevTask = _db.FinancialPayments
-                .Select(p => (decimal?)(p.total_service_fee ?? 0))
-                .DefaultIfEmpty(0)
-                .SumAsync();
-
-            var monthRevTask = _db.FinancialPayments
-                .Where(p => p.payment_date.Year == now.Year && p.payment_date.Month == now.Month)
-                .Select(p => (decimal?)(p.total_service_fee ?? 0))
-                .DefaultIfEmpty(0)
-                .SumAsync();
 
             await Task.WhenAll(
                 employeeTask, residentsTask, familyTask,
                 occupiedTask, totalUnitsTask,
                 pendingVisitsTask, todayVisitsTask,
                 openMaintTask, inProgressTask,
-                totalRevTask, monthRevTask, totalPayCountTask
+                totalPayCountTask
             );
+
+            // ✅ الحل النهائي: ToList في الذاكرة ثم Sum — يتجنب كل مشاكل EF Core مع decimal?
+            var allFees = await _db.FinancialPayments
+                .Select(p => p.total_service_fee)
+                .ToListAsync();
+            var totalRev = allFees.Sum(f => f ?? 0m);
+
+            var monthFees = await _db.FinancialPayments
+                .Where(p => p.payment_date.Year == now.Year && p.payment_date.Month == now.Month)
+                .Select(p => p.total_service_fee)
+                .ToListAsync();
+            var monthlyRev = monthFees.Sum(f => f ?? 0m);
 
             var employee = employeeTask.Result;
             var occupiedUnits = occupiedTask.Result;
             var totalUnits = totalUnitsTask.Result;
-            // ✅ SumAsync على decimal? يُعيد decimal? — نحوّل بـ ?? 0
-            var totalRev = totalRevTask.Result ?? 0m;
-            var monthlyRev = monthRevTask.Result ?? 0m;
             var totalPayCount = totalPayCountTask.Result;
 
             var employeeName = employee is null ? "غير معروف"
@@ -214,8 +197,6 @@ namespace StarComplexAPI.Controllers
                 .OrderByDescending(p => p.payment_date).Take(10).ToListAsync();
             var recentMaintRawTask = _db.MaintenanceRequests
                 .OrderByDescending(m => m.request_date).Take(8).ToListAsync();
-
-            // ✅ service_id هو int? في FinancialPayment
             var topServiceTask = _db.FinancialPayments
                 .Where(p => p.service_id.HasValue)
                 .GroupBy(p => p.service_id!.Value)
@@ -237,14 +218,13 @@ namespace StarComplexAPI.Controllers
                 topServiceCount = $"{topServiceData.Count} طلب";
             }
 
-            // ✅ unit_id و service_id و total_service_fee و employee_id كلها nullable
             var recentPayments = recentPaymentsRaw.Select(p => new DashboardPaymentItemDto
             {
                 PaymentId = $"#{p.payment_id}",
                 UnitId = p.unit_id.ToString(),
                 ServiceName = p.service_id.HasValue
-                                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
-                                    : "—",
+                                     ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
+                                     : "—",
                 TotalFeeRaw = p.total_service_fee ?? 0m,
                 TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                 PaymentDateRaw = p.payment_date,
@@ -298,8 +278,7 @@ namespace StarComplexAPI.Controllers
             => GetKpi(employeeId);
 
         // ══════════════════════════════════════════════════════════
-        //  2. الموظفون
-        //     GET api/admindashboard/employees
+        //  الموظفون
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees")]
         public async Task<ActionResult> GetEmployees()
@@ -313,7 +292,6 @@ namespace StarComplexAPI.Controllers
                 e.third_name,
                 e.job_title,
                 e.phone_number,
-                // ✅ employee_type و employee_index موجودان في الموديل
                 e.employee_type,
                 e.employee_index,
                 full_name = (e.first_name + " " +
@@ -357,9 +335,6 @@ namespace StarComplexAPI.Controllers
             });
         }
 
-        // ══════════════════════════════════════════════════════════
-        //  حذف موظف + أرشفة
-        // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
         {
@@ -372,7 +347,6 @@ namespace StarComplexAPI.Controllers
             var serviceMap = await _db.FinancialConstants
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
-            // ✅ employee_id في FinancialPayment هو int? — نقارن بـ (int?)id
             var financialRecords = await _db.FinancialPayments
                 .Where(p => p.employee_id == (int?)id)
                 .ToListAsync();
@@ -402,7 +376,6 @@ namespace StarComplexAPI.Controllers
                     "DELETE FROM employees WHERE employee_id = {0}", id);
             }
 
-            // ✅ كل الحقول nullable — نستخدم ?? للقيم الافتراضية
             var snapshot = financialRecords.Select(p => new ArchivedFinancialRecordDto
             {
                 PaymentId = p.payment_id,
@@ -426,8 +399,7 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  3. الأرشيف
-        //     GET api/admindashboard/employees/archive
+        //  الأرشيف
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
@@ -445,12 +417,11 @@ namespace StarComplexAPI.Controllers
             if (archived.Count == 0) return Ok(new List<ArchivedEmployeeDto>());
 
             var employeeIds = archived.Select(a => a.employee_id).Distinct().ToList();
+            var nullableIds = employeeIds.Select(i => (int?)i).ToList();
 
             List<FinancialPayment> allPayments;
             try
             {
-                // ✅ employee_id في FinancialPayment هو int? — نحوّل القائمة لـ List<int?>
-                var nullableIds = employeeIds.Select(i => (int?)i).ToList();
                 allPayments = await _db.FinancialPayments
                     .Where(p => nullableIds.Contains(p.employee_id))
                     .OrderByDescending(p => p.payment_date)
@@ -461,13 +432,11 @@ namespace StarComplexAPI.Controllers
                 var allRaw = await _db.FinancialPayments
                     .OrderByDescending(p => p.payment_date)
                     .ToListAsync();
-
                 allPayments = allRaw
                     .Where(p => p.employee_id.HasValue && employeeIds.Contains(p.employee_id.Value))
                     .ToList();
             }
 
-            // ✅ employee_id هو int? — نُجمَّع بعد استخراج القيمة
             var paymentsByEmp = allPayments
                 .Where(p => p.employee_id.HasValue)
                 .GroupBy(p => p.employee_id!.Value)
@@ -518,8 +487,6 @@ namespace StarComplexAPI.Controllers
 
             var serviceMapTask = _db.FinancialConstants
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-
-            // ✅ employee_id هو int? — نقارن بـ (int?)a.employee_id
             var financialRecordsTask = _db.FinancialPayments
                 .Where(p => p.employee_id == (int?)a.employee_id)
                 .Select(p => new
@@ -555,8 +522,8 @@ namespace StarComplexAPI.Controllers
                     p.payment_id,
                     p.unit_id,
                     serviceName = p.service_id.HasValue
-                                       ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
-                                       : "—",
+                                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
+                                        : "—",
                     totalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                     paymentDate = p.payment_date.ToString("yyyy/MM/dd"),
                     paymentMethod = p.payment_method ?? string.Empty
@@ -566,13 +533,12 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  4. القائمة السوداء
+        //  القائمة السوداء
         // ══════════════════════════════════════════════════════════
         [HttpGet("blacklist")]
         public async Task<ActionResult> GetBlacklist()
         {
             var listTask = _db.Blacklist.ToListAsync();
-
             var empListTask = _db.Employees
                 .Select(e => new
                 {
@@ -581,7 +547,6 @@ namespace StarComplexAPI.Controllers
                                (e.second_name ?? "") + " " +
                                (e.third_name ?? "")).Trim()
                 }).ToListAsync();
-
             var archListTask = _db.EmployeesArchive
                 .Select(a => new
                 {
@@ -602,7 +567,6 @@ namespace StarComplexAPI.Controllers
             return Ok(listTask.Result.Select(b => new
             {
                 b.blacklist_id,
-                // ✅ person_name هو string? في الموديل
                 person_name = b.person_name ?? string.Empty,
                 b.employee_id,
                 added_by_name = nameMap.GetValueOrDefault(b.employee_id, "موظف غير معروف"),
@@ -669,8 +633,6 @@ namespace StarComplexAPI.Controllers
                 phone_number = req.PhoneNumber,
                 resident_type = req.ResidentType,
                 family_members_count = req.FamilyMembersCount
-                // ✅ name_hash و login_count و last_login موجودة في الموديل
-                //    تُترك null لأنها تُملأ عند أول تسجيل دخول
             };
 
             _db.Residents.Add(res);
@@ -693,7 +655,6 @@ namespace StarComplexAPI.Controllers
         [HttpPut("approve-visit")]
         public async Task<ActionResult> ApproveVisit([FromBody] ApproveVisitRequest req)
         {
-            // ✅ visit_id في الموديل هو int? — نبحث بـ FindAsync مع int?
             var visit = await _db.Visits.FindAsync((int?)req.VisitId);
             if (visit == null) return NotFound(new { message = "الزيارة غير موجودة" });
 
@@ -715,7 +676,6 @@ namespace StarComplexAPI.Controllers
                 unit_id = req.UnitId,
                 service_id = req.ServiceId,
                 request_date = DateTime.Now,
-                // ✅ الحالة الافتراضية الصحيحة من الموديل
                 request_status = req.RequestStatus ?? "قيد الانتظار",
                 feedback = req.Feedback
             };
@@ -745,7 +705,6 @@ namespace StarComplexAPI.Controllers
 
         private static string MapStatusColor(string? status) => status switch
         {
-            // ✅ الحالات الصحيحة من موديل MaintenanceRequest
             "قيد الانتظار" => "#E67E22",
             "قيد التنفيذ" => "#3498DB",
             "تم تنفيذ الطلب" => "#27AE60",
