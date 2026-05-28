@@ -147,69 +147,71 @@ namespace StarComplexAPI.Controllers
         {
             var now = DateTime.Now;
 
-            var employeeTask = _db.Employees.FindAsync(employeeId).AsTask();
-            var residentsTask = _db.Residents.CountAsync();
-            var familyTask = _db.FamilyMembers.CountAsync();
-            var occupiedTask = _db.HousingUnits.CountAsync(u => u.unit_status == "مشغول");
-            var totalUnitsTask = _db.HousingUnits.CountAsync();
-            var pendingVisitsTask = _db.Visits.CountAsync(v => v.visit_status == "معلقة");
-            var todayVisitsTask = _db.Visits.CountAsync(v =>
+            // ✅ الحل: تنفيذ جميع الاستعلامات بشكل متسلسل، بدون Task.WhenAll
+            // هذا يتجنب التنافس على DbContext
+
+            var employee = await _db.Employees.FindAsync(employeeId);
+            var totalResidents = await _db.Residents.CountAsync();
+            var totalFamilyMembers = await _db.FamilyMembers.CountAsync();
+            var occupiedUnits = await _db.HousingUnits.CountAsync(u => u.unit_status == "مشغول");
+            var totalUnits = await _db.HousingUnits.CountAsync();
+            var pendingVisits = await _db.Visits.CountAsync(v => v.visit_status == "معلقة");
+            var todayVisits = await _db.Visits.CountAsync(v =>
                 v.visit_date.HasValue && v.visit_date.Value.Date == DateTime.Today);
-            var openMaintTask = _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد الانتظار");
-            var inProgressTask = _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
-            var totalPayCountTask = _db.FinancialPayments.CountAsync();
+            var openMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد الانتظار");
+            var inProgressMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
+            var totalPaymentCount = await _db.FinancialPayments.CountAsync();
 
-            await Task.WhenAll(
-                employeeTask, residentsTask, familyTask,
-                occupiedTask, totalUnitsTask,
-                pendingVisitsTask, todayVisitsTask,
-                openMaintTask, inProgressTask,
-                totalPayCountTask
-            );
-
-            // ✅ الحل النهائي: ToList في الذاكرة ثم Sum — يتجنب كل مشاكل EF Core مع decimal?
+            // ✅ الإيرادات الإجمالية - ToList ثم Sum
             var allFees = await _db.FinancialPayments
+                .AsNoTracking()
                 .Select(p => p.total_service_fee)
                 .ToListAsync();
-            var totalRev = allFees.Sum(f => f ?? 0m);
+            var totalRevenue = allFees.Sum(f => f ?? 0m);
 
+            // ✅ الإيرادات الشهرية
             var monthFees = await _db.FinancialPayments
+                .AsNoTracking()
                 .Where(p => p.payment_date.Year == now.Year && p.payment_date.Month == now.Month)
                 .Select(p => p.total_service_fee)
                 .ToListAsync();
-            var monthlyRev = monthFees.Sum(f => f ?? 0m);
+            var monthlyRevenue = monthFees.Sum(f => f ?? 0m);
 
-            var employee = employeeTask.Result;
-            var occupiedUnits = occupiedTask.Result;
-            var totalUnits = totalUnitsTask.Result;
-            var totalPayCount = totalPayCountTask.Result;
-
-            var employeeName = employee is null ? "غير معروف"
-                : string.Join(" ", new[] { employee.first_name, employee.second_name, employee.third_name }
-                    .Where(n => !string.IsNullOrWhiteSpace(n)));
-
-            var occupancyPct = totalUnits > 0
-                ? (int)Math.Round((double)occupiedUnits / totalUnits * 100) : 0;
-
-            var serviceMapTask = _db.FinancialConstants
+            // ✅ خريطة الخدمات
+            var serviceMap = await _db.FinancialConstants
+                .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-            var recentPaymentsRawTask = _db.FinancialPayments
-                .OrderByDescending(p => p.payment_date).Take(10).ToListAsync();
-            var recentMaintRawTask = _db.MaintenanceRequests
-                .OrderByDescending(m => m.request_date).Take(8).ToListAsync();
-            var topServiceTask = _db.FinancialPayments
+
+            // ✅ أحدث الدفعات
+            var recentPayments = await _db.FinancialPayments
+                .AsNoTracking()
+                .OrderByDescending(p => p.payment_date)
+                .Take(10)
+                .ToListAsync();
+
+            // ✅ أحدث طلبات الصيانة
+            var recentMaintenance = await _db.MaintenanceRequests
+                .AsNoTracking()
+                .OrderByDescending(m => m.request_date)
+                .Take(8)
+                .ToListAsync();
+
+            // ✅ أعلى خدمة
+            var topServiceData = await _db.FinancialPayments
+                .AsNoTracking()
                 .Where(p => p.service_id.HasValue)
                 .GroupBy(p => p.service_id!.Value)
                 .Select(g => new { Id = g.Key, Count = g.Count() })
                 .OrderByDescending(x => x.Count)
                 .FirstOrDefaultAsync();
 
-            await Task.WhenAll(serviceMapTask, recentPaymentsRawTask, recentMaintRawTask, topServiceTask);
+            // ✅ معالجة البيانات
+            var employeeName = employee is null ? "غير معروف"
+                : string.Join(" ", new[] { employee.first_name, employee.second_name, employee.third_name }
+                    .Where(n => !string.IsNullOrWhiteSpace(n)));
 
-            var serviceMap = serviceMapTask.Result;
-            var recentPaymentsRaw = recentPaymentsRawTask.Result;
-            var recentMaintRaw = recentMaintRawTask.Result;
-            var topServiceData = topServiceTask.Result;
+            var occupancyPercentage = totalUnits > 0
+                ? (int)Math.Round((double)occupiedUnits / totalUnits * 100) : 0;
 
             string topServiceName = "—", topServiceCount = "";
             if (topServiceData != null)
@@ -218,13 +220,14 @@ namespace StarComplexAPI.Controllers
                 topServiceCount = $"{topServiceData.Count} طلب";
             }
 
-            var recentPayments = recentPaymentsRaw.Select(p => new DashboardPaymentItemDto
+            // ✅ تحويل الدفعات
+            var paymentDtos = recentPayments.Select(p => new DashboardPaymentItemDto
             {
                 PaymentId = $"#{p.payment_id}",
                 UnitId = p.unit_id.ToString(),
                 ServiceName = p.service_id.HasValue
-                                     ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
-                                     : "—",
+                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
+                    : "—",
                 TotalFeeRaw = p.total_service_fee ?? 0m,
                 TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                 PaymentDateRaw = p.payment_date,
@@ -232,7 +235,8 @@ namespace StarComplexAPI.Controllers
                 PaymentMethod = p.payment_method ?? string.Empty
             }).ToList();
 
-            var recentMaintenance = recentMaintRaw.Select(m => new DashboardMaintenanceItemDto
+            // ✅ تحويل الصيانة
+            var maintenanceDtos = recentMaintenance.Select(m => new DashboardMaintenanceItemDto
             {
                 RequestId = $"#{m.request_id}",
                 UnitId = m.unit_id.ToString(),
@@ -247,29 +251,29 @@ namespace StarComplexAPI.Controllers
             {
                 Kpi = new DashboardKpiDto
                 {
-                    TotalResidents = residentsTask.Result,
-                    ResidentsSub = $"مع {familyTask.Result} فرد عائلة",
+                    TotalResidents = totalResidents,
+                    ResidentsSub = $"مع {totalFamilyMembers} فرد عائلة",
                     OccupiedUnits = occupiedUnits,
                     TotalUnits = totalUnits,
-                    OccupancyRate = $"نسبة الإشغال {occupancyPct}%",
-                    PendingVisits = pendingVisitsTask.Result,
-                    VisitsSub = $"{todayVisitsTask.Result} زيارة اليوم",
-                    OpenMaintenance = openMaintTask.Result,
-                    MaintenanceSub = $"{inProgressTask.Result} قيد التنفيذ",
-                    TotalRevenueRaw = totalRev,
-                    TotalRevenue = totalRev.ToString("N0") + " د.ع",
-                    MonthlyRevenueRaw = monthlyRev,
-                    MonthlyRevenue = monthlyRev.ToString("N0") + " د.ع",
+                    OccupancyRate = $"نسبة الإشغال {occupancyPercentage}%",
+                    PendingVisits = pendingVisits,
+                    VisitsSub = $"{todayVisits} زيارة اليوم",
+                    OpenMaintenance = openMaintenance,
+                    MaintenanceSub = $"{inProgressMaintenance} قيد التنفيذ",
+                    TotalRevenueRaw = totalRevenue,
+                    TotalRevenue = totalRevenue.ToString("N0") + " د.ع",
+                    MonthlyRevenueRaw = monthlyRevenue,
+                    MonthlyRevenue = monthlyRevenue.ToString("N0") + " د.ع",
                     CurrentMonthLabel = $"{ArabicMonths[now.Month - 1]} {now.Year}",
                     TopService = topServiceName,
                     TopServiceCount = topServiceCount,
-                    RecentPaymentsSub = $"آخر {recentPayments.Count} دفعات",
-                    PaymentsCountLabel = $"الإجمالي: {totalPayCount}",
+                    RecentPaymentsSub = $"آخر {paymentDtos.Count} دفعات",
+                    PaymentsCountLabel = $"الإجمالي: {totalPaymentCount}",
                     EmployeeName = employeeName,
                     EmployeeTitle = employee?.job_title ?? string.Empty
                 },
-                RecentPayments = recentPayments,
-                RecentMaintenance = recentMaintenance
+                RecentPayments = paymentDtos,
+                RecentMaintenance = maintenanceDtos
             });
         }
 
@@ -283,21 +287,23 @@ namespace StarComplexAPI.Controllers
         [HttpGet("employees")]
         public async Task<ActionResult> GetEmployees()
         {
-            var list = await _db.Employees.Select(e => new
-            {
-                e.employee_id,
-                e.employee_code,
-                e.first_name,
-                e.second_name,
-                e.third_name,
-                e.job_title,
-                e.phone_number,
-                e.employee_type,
-                e.employee_index,
-                full_name = (e.first_name + " " +
-                            (e.second_name ?? "") + " " +
-                            (e.third_name ?? "")).Trim()
-            }).ToListAsync();
+            var list = await _db.Employees
+                .AsNoTracking()
+                .Select(e => new
+                {
+                    e.employee_id,
+                    e.employee_code,
+                    e.first_name,
+                    e.second_name,
+                    e.third_name,
+                    e.job_title,
+                    e.phone_number,
+                    e.employee_type,
+                    e.employee_index,
+                    full_name = (e.first_name + " " +
+                                (e.second_name ?? "") + " " +
+                                (e.third_name ?? "")).Trim()
+                }).ToListAsync();
 
             return Ok(list);
         }
@@ -345,9 +351,11 @@ namespace StarComplexAPI.Controllers
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
             var serviceMap = await _db.FinancialConstants
+                .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
             var financialRecords = await _db.FinancialPayments
+                .AsNoTracking()
                 .Where(p => p.employee_id == (int?)id)
                 .ToListAsync();
 
@@ -381,8 +389,8 @@ namespace StarComplexAPI.Controllers
                 PaymentId = p.payment_id,
                 UnitId = p.unit_id,
                 ServiceName = p.service_id.HasValue
-                                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
-                                    : "—",
+                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
+                    : "—",
                 TotalFeeRaw = p.total_service_fee ?? 0m,
                 TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                 PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
@@ -404,41 +412,25 @@ namespace StarComplexAPI.Controllers
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
         {
-            var archivedTask = _db.EmployeesArchive
+            var archived = await _db.EmployeesArchive
+                .AsNoTracking()
                 .OrderByDescending(a => a.archived_at).ToListAsync();
-            var serviceMapTask = _db.FinancialConstants
+
+            var serviceMap = await _db.FinancialConstants
+                .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-
-            await Task.WhenAll(archivedTask, serviceMapTask);
-
-            var archived = archivedTask.Result;
-            var serviceMap = serviceMapTask.Result;
 
             if (archived.Count == 0) return Ok(new List<ArchivedEmployeeDto>());
 
             var employeeIds = archived.Select(a => a.employee_id).Distinct().ToList();
-            var nullableIds = employeeIds.Select(i => (int?)i).ToList();
 
-            List<FinancialPayment> allPayments;
-            try
-            {
-                allPayments = await _db.FinancialPayments
-                    .Where(p => nullableIds.Contains(p.employee_id))
-                    .OrderByDescending(p => p.payment_date)
-                    .ToListAsync();
-            }
-            catch
-            {
-                var allRaw = await _db.FinancialPayments
-                    .OrderByDescending(p => p.payment_date)
-                    .ToListAsync();
-                allPayments = allRaw
-                    .Where(p => p.employee_id.HasValue && employeeIds.Contains(p.employee_id.Value))
-                    .ToList();
-            }
+            var allPayments = await _db.FinancialPayments
+                .AsNoTracking()
+                .OrderByDescending(p => p.payment_date)
+                .ToListAsync();
 
             var paymentsByEmp = allPayments
-                .Where(p => p.employee_id.HasValue)
+                .Where(p => p.employee_id.HasValue && employeeIds.Contains(p.employee_id.Value))
                 .GroupBy(p => p.employee_id!.Value)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
@@ -450,8 +442,8 @@ namespace StarComplexAPI.Controllers
                     PaymentId = p.payment_id,
                     UnitId = p.unit_id,
                     ServiceName = p.service_id.HasValue
-                                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
-                                        : "—",
+                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
+                        : "—",
                     TotalFeeRaw = p.total_service_fee ?? 0m,
                     TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                     PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
@@ -482,12 +474,15 @@ namespace StarComplexAPI.Controllers
         [HttpGet("employees/archive/{archiveId}")]
         public async Task<ActionResult> GetArchivedEmployee(int archiveId)
         {
-            var a = await _db.EmployeesArchive.FindAsync(archiveId);
+            var a = await _db.EmployeesArchive.AsNoTracking().FirstOrDefaultAsync(x => x.archive_id == archiveId);
             if (a == null) return NotFound(new { message = "السجل غير موجود في الأرشيف" });
 
-            var serviceMapTask = _db.FinancialConstants
+            var serviceMap = await _db.FinancialConstants
+                .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-            var financialRecordsTask = _db.FinancialPayments
+
+            var financialRecords = await _db.FinancialPayments
+                .AsNoTracking()
                 .Where(p => p.employee_id == (int?)a.employee_id)
                 .Select(p => new
                 {
@@ -499,10 +494,6 @@ namespace StarComplexAPI.Controllers
                     p.payment_method
                 })
                 .ToListAsync();
-
-            await Task.WhenAll(serviceMapTask, financialRecordsTask);
-            var serviceMap = serviceMapTask.Result;
-            var financialRecords = financialRecordsTask.Result;
 
             return Ok(new
             {
@@ -522,8 +513,8 @@ namespace StarComplexAPI.Controllers
                     p.payment_id,
                     p.unit_id,
                     serviceName = p.service_id.HasValue
-                                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
-                                        : "—",
+                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
+                        : "—",
                     totalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                     paymentDate = p.payment_date.ToString("yyyy/MM/dd"),
                     paymentMethod = p.payment_method ?? string.Empty
@@ -538,8 +529,10 @@ namespace StarComplexAPI.Controllers
         [HttpGet("blacklist")]
         public async Task<ActionResult> GetBlacklist()
         {
-            var listTask = _db.Blacklist.ToListAsync();
-            var empListTask = _db.Employees
+            var list = await _db.Blacklist.AsNoTracking().ToListAsync();
+
+            var empList = await _db.Employees
+                .AsNoTracking()
                 .Select(e => new
                 {
                     e.employee_id,
@@ -547,7 +540,9 @@ namespace StarComplexAPI.Controllers
                                (e.second_name ?? "") + " " +
                                (e.third_name ?? "")).Trim()
                 }).ToListAsync();
-            var archListTask = _db.EmployeesArchive
+
+            var archList = await _db.EmployeesArchive
+                .AsNoTracking()
                 .Select(a => new
                 {
                     a.employee_id,
@@ -556,15 +551,13 @@ namespace StarComplexAPI.Controllers
                                (a.third_name ?? "")).Trim() + " (مؤرشف)"
                 }).ToListAsync();
 
-            await Task.WhenAll(listTask, empListTask, archListTask);
-
             var nameMap = new Dictionary<int, string>();
-            foreach (var arch in archListTask.Result)
+            foreach (var arch in archList)
                 nameMap.TryAdd(arch.employee_id, arch.FullName);
-            foreach (var e in empListTask.Result)
+            foreach (var e in empList)
                 nameMap[e.employee_id] = e.FullName;
 
-            return Ok(listTask.Result.Select(b => new
+            return Ok(list.Select(b => new
             {
                 b.blacklist_id,
                 person_name = b.person_name ?? string.Empty,
@@ -648,9 +641,10 @@ namespace StarComplexAPI.Controllers
         [HttpGet("pending-visits")]
         public async Task<ActionResult> GetPendingVisits()
             => Ok(await _db.Visits
-                           .Where(v => v.visit_status == "معلقة")
-                           .OrderByDescending(v => v.visit_date)
-                           .ToListAsync());
+                .AsNoTracking()
+                .Where(v => v.visit_status == "معلقة")
+                .OrderByDescending(v => v.visit_date)
+                .ToListAsync());
 
         [HttpPut("approve-visit")]
         public async Task<ActionResult> ApproveVisit([FromBody] ApproveVisitRequest req)
@@ -691,11 +685,11 @@ namespace StarComplexAPI.Controllers
         // ══════════════════════════════════════════════════════════
         [HttpGet("services")]
         public async Task<ActionResult> GetServices()
-            => Ok(await _db.FinancialConstants.ToListAsync());
+            => Ok(await _db.FinancialConstants.AsNoTracking().ToListAsync());
 
         [HttpGet("available-units")]
         public async Task<ActionResult> GetAvailableUnits()
-            => Ok(await _db.HousingUnits.Where(u => u.unit_status == "فارغ").ToListAsync());
+            => Ok(await _db.HousingUnits.AsNoTracking().Where(u => u.unit_status == "فارغ").ToListAsync());
 
         // ══════════════════════════════════════════════════════════
         //  مساعد
