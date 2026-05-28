@@ -5,9 +5,9 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. جعل السيرفر يستمع لجميع الـ IPs لضمان وصول الموبايل إليه
-// (هذا السطر يضمن أن السيرفر يقبل اتصالات من أي IP على الشبكة المحلية)
-builder.WebHost.UseUrls("http://0.0.0.0:5126");
+// ✅ Railway PORT env variable — محلياً يستخدم 5126
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5126";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 // ── قاعدة البيانات ─────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -32,7 +32,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 2. تفعيل Scalar للجميع خلال فترة التطوير والبروفة
+// ── Scalar ────────────────────────────────────────────────────
 app.MapOpenApi();
 app.MapScalarApiReference(options =>
 {
@@ -42,7 +42,6 @@ app.MapScalarApiReference(options =>
 });
 
 // ── Middleware Pipeline ────────────────────────────────────────
-// الترتيب الصحيح للميدل وير
 app.UseStaticFiles();
 app.UseCors("AllowAll");
 app.UseAuthorization();
