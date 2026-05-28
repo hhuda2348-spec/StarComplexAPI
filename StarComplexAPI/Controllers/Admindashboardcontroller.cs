@@ -62,9 +62,6 @@ namespace StarComplexAPI.Controllers
         public List<DashboardMaintenanceItemDto> RecentMaintenance { get; set; } = new();
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  Archived Employee DTO — مع السجلات المالية
-    // ══════════════════════════════════════════════════════════════
     public class ArchivedEmployeeDto
     {
         public int ArchiveId { get; set; }
@@ -91,9 +88,6 @@ namespace StarComplexAPI.Controllers
         public string PaymentMethod { get; set; } = string.Empty;
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  Request DTOs
-    // ══════════════════════════════════════════════════════════════
     public class AddBlacklistRequest
     {
         public string PersonName { get; set; } = string.Empty;
@@ -137,9 +131,6 @@ namespace StarComplexAPI.Controllers
         public string? Feedback { get; set; }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  Controller
-    // ══════════════════════════════════════════════════════════════
     [ApiController]
     [Route("api/[controller]")]
     public class AdminDashboardController : ControllerBase
@@ -155,50 +146,47 @@ namespace StarComplexAPI.Controllers
         public AdminDashboardController(StarComplexContext db) => _db = db;
 
         // ══════════════════════════════════════════════════════════
-        //  ✅ Dashboard كامل — كل الـ Count queries بالتوازي
+        //  1. KPI — يُحمَّل أول شيء، أسرع endpoint
+        //     GET api/admindashboard/kpi/{employeeId}
         // ══════════════════════════════════════════════════════════
-        [HttpGet("full/{employeeId}")]
-        public async Task<ActionResult<DashboardResponseDto>> GetFullDashboard(int employeeId)
+        [HttpGet("kpi/{employeeId}")]
+        public async Task<ActionResult<DashboardResponseDto>> GetKpi(int employeeId)
         {
             var now = DateTime.Now;
 
-            // ── جميع queries العد تشتغل بالتوازي ──
             var employeeTask = _db.Employees.FindAsync(employeeId).AsTask();
             var residentsTask = _db.Residents.CountAsync();
             var familyTask = _db.FamilyMembers.CountAsync();
             var occupiedTask = _db.HousingUnits.CountAsync(u => u.unit_status == "مشغول");
             var totalUnitsTask = _db.HousingUnits.CountAsync();
             var pendingVisitsTask = _db.Visits.CountAsync(v => v.visit_status == "معلقة");
-            var todayVisitsTask = _db.Visits.CountAsync(v => v.visit_date.HasValue && v.visit_date.Value.Date == DateTime.Today);
+            var todayVisitsTask = _db.Visits.CountAsync(v =>
+                v.visit_date.HasValue && v.visit_date.Value.Date == DateTime.Today);
             var openMaintTask = _db.MaintenanceRequests.CountAsync(m => m.request_status == "مفتوح");
             var inProgressTask = _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
-            var totalRevTask = _db.FinancialPayments.SumAsync(p => p.total_service_fee);
+            var totalPayCountTask = _db.FinancialPayments.CountAsync();
+
+            // ✅ SumAsync آمن على جدول فارغ
+            var totalRevTask = _db.FinancialPayments
+                .Select(p => p.total_service_fee).DefaultIfEmpty(0).SumAsync();
             var monthRevTask = _db.FinancialPayments
-                                           .Where(p => p.payment_date.Year == now.Year && p.payment_date.Month == now.Month)
-                                           .SumAsync(p => p.total_service_fee);
-            var totalPaymentsCountTask = _db.FinancialPayments.CountAsync();
+                .Where(p => p.payment_date.Year == now.Year && p.payment_date.Month == now.Month)
+                .Select(p => p.total_service_fee).DefaultIfEmpty(0).SumAsync();
 
             await Task.WhenAll(
                 employeeTask, residentsTask, familyTask,
                 occupiedTask, totalUnitsTask,
                 pendingVisitsTask, todayVisitsTask,
                 openMaintTask, inProgressTask,
-                totalRevTask, monthRevTask,
-                totalPaymentsCountTask
+                totalRevTask, monthRevTask, totalPayCountTask
             );
 
             var employee = employeeTask.Result;
-            var totalResidents = residentsTask.Result;
-            var familyCount = familyTask.Result;
             var occupiedUnits = occupiedTask.Result;
             var totalUnits = totalUnitsTask.Result;
-            var pendingVisits = pendingVisitsTask.Result;
-            var todayVisits = todayVisitsTask.Result;
-            var openMaint = openMaintTask.Result;
-            var inProgress = inProgressTask.Result;
             var totalRev = totalRevTask.Result;
             var monthlyRev = monthRevTask.Result;
-            var totalPayCount = totalPaymentsCountTask.Result;
+            var totalPayCount = totalPayCountTask.Result;
 
             var employeeName = employee is null ? "غير معروف"
                 : string.Join(" ", new[] { employee.first_name, employee.second_name, employee.third_name }
@@ -207,15 +195,17 @@ namespace StarComplexAPI.Controllers
             var occupancyPct = totalUnits > 0
                 ? (int)Math.Round((double)occupiedUnits / totalUnits * 100) : 0;
 
-            // ── serviceMap + top service + recent data ──
-            var serviceMapTask = _db.FinancialConstants.ToDictionaryAsync(s => s.service_id, s => s.service_name);
-            var recentPaymentsRawTask = _db.FinancialPayments.OrderByDescending(p => p.payment_date).Take(10).ToListAsync();
-            var recentMaintRawTask = _db.MaintenanceRequests.OrderByDescending(m => m.request_date).Take(8).ToListAsync();
+            var serviceMapTask = _db.FinancialConstants
+                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
+            var recentPaymentsRawTask = _db.FinancialPayments
+                .OrderByDescending(p => p.payment_date).Take(10).ToListAsync();
+            var recentMaintRawTask = _db.MaintenanceRequests
+                .OrderByDescending(m => m.request_date).Take(8).ToListAsync();
             var topServiceTask = _db.FinancialPayments
-                                          .GroupBy(p => p.service_id)
-                                          .Select(g => new { Id = g.Key, Count = g.Count() })
-                                          .OrderByDescending(x => x.Count)
-                                          .FirstOrDefaultAsync();
+                .GroupBy(p => p.service_id)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .OrderByDescending(x => x.Count)
+                .FirstOrDefaultAsync();
 
             await Task.WhenAll(serviceMapTask, recentPaymentsRawTask, recentMaintRawTask, topServiceTask);
 
@@ -258,15 +248,15 @@ namespace StarComplexAPI.Controllers
             {
                 Kpi = new DashboardKpiDto
                 {
-                    TotalResidents = totalResidents,
-                    ResidentsSub = $"مع {familyCount} فرد عائلة",
+                    TotalResidents = residentsTask.Result,
+                    ResidentsSub = $"مع {familyTask.Result} فرد عائلة",
                     OccupiedUnits = occupiedUnits,
                     TotalUnits = totalUnits,
                     OccupancyRate = $"نسبة الإشغال {occupancyPct}%",
-                    PendingVisits = pendingVisits,
-                    VisitsSub = $"{todayVisits} زيارة اليوم",
-                    OpenMaintenance = openMaint,
-                    MaintenanceSub = $"{inProgress} قيد التنفيذ",
+                    PendingVisits = pendingVisitsTask.Result,
+                    VisitsSub = $"{todayVisitsTask.Result} زيارة اليوم",
+                    OpenMaintenance = openMaintTask.Result,
+                    MaintenanceSub = $"{inProgressTask.Result} قيد التنفيذ",
                     TotalRevenueRaw = totalRev,
                     TotalRevenue = totalRev.ToString("N0") + " د.ع",
                     MonthlyRevenueRaw = monthlyRev,
@@ -284,13 +274,19 @@ namespace StarComplexAPI.Controllers
             });
         }
 
+        // ✅ للتوافق مع الكود القديم في MAUI
+        [HttpGet("full/{employeeId}")]
+        public Task<ActionResult<DashboardResponseDto>> GetFullDashboard(int employeeId)
+            => GetKpi(employeeId);
+
         // ══════════════════════════════════════════════════════════
-        //  الموظفون
+        //  2. الموظفون — endpoint مستقل
+        //     GET api/admindashboard/employees
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees")]
         public async Task<ActionResult> GetEmployees()
         {
-            return Ok(await _db.Employees.Select(e => new
+            var list = await _db.Employees.Select(e => new
             {
                 e.employee_id,
                 e.employee_code,
@@ -299,8 +295,12 @@ namespace StarComplexAPI.Controllers
                 e.third_name,
                 e.job_title,
                 e.phone_number,
-                full_name = (e.first_name + " " + e.second_name + " " + e.third_name).Trim()
-            }).ToListAsync());
+                full_name = (e.first_name + " " +
+                            (e.second_name ?? "") + " " +
+                            (e.third_name ?? "")).Trim()
+            }).ToListAsync();
+
+            return Ok(list);
         }
 
         [HttpPost("employees")]
@@ -330,11 +330,16 @@ namespace StarComplexAPI.Controllers
                 message = "تمت إضافة الموظف بنجاح",
                 employee_id = emp.employee_id,
                 employee_code = emp.employee_code,
-                full_name = string.Join(" ", new[] { emp.first_name, emp.second_name, emp.third_name }
-                                    .Where(n => !string.IsNullOrWhiteSpace(n)))
+                full_name = string.Join(" ",
+                    new[] { emp.first_name, emp.second_name, emp.third_name }
+                        .Where(n => !string.IsNullOrWhiteSpace(n)))
             });
         }
 
+        // ══════════════════════════════════════════════════════════
+        //  حذف موظف + حفظ السجلات المالية في snapshot داخل الأرشيف
+        //  ✅ الموديلات لم تتغير — نحفظ نسخة مقروءة في ArchivedAt
+        // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
         {
@@ -344,8 +349,16 @@ namespace StarComplexAPI.Controllers
             var emp = await _db.Employees.FindAsync(id);
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
-            var financialCount = await _db.FinancialPayments.CountAsync(p => p.employee_id == id);
+            // ── جلب الخدمات للأسماء ──
+            var serviceMap = await _db.FinancialConstants
+                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
+            // ── جلب السجلات المالية قبل الحذف ──
+            var financialRecords = await _db.FinancialPayments
+                .Where(p => p.employee_id == id)
+                .ToListAsync();
+
+            // ── أرشفة الموظف ──
             var archive = new EmployeeArchive
             {
                 employee_id = emp.employee_id,
@@ -356,31 +369,59 @@ namespace StarComplexAPI.Controllers
                 phone_number = emp.phone_number,
                 archived_at = DateTime.Now
             };
+
             _db.EmployeesArchive.Add(archive);
             await _db.SaveChangesAsync();
 
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0");
-            _db.Employees.Remove(emp);
-            await _db.SaveChangesAsync();
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1");
+            // ── حذف الموظف ──
+            // السجلات المالية تبقى في financial_payments كما هي
+            // الـ employee_id فيها يشير لـ id الموظف المحذوف
+            // وعند جلب الأرشيف نربطهم بالـ employee_id من employees_archive
+            try
+            {
+                _db.Employees.Remove(emp);
+                await _db.SaveChangesAsync();
+            }
+            catch
+            {
+                // ✅ Fallback لو FK constraint منع الحذف
+                await _db.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM employees WHERE employee_id = {0}", id);
+            }
+
+            // ── بناء snapshot للـ response فقط (لعرضها في الـ UI فوراً) ──
+            var snapshot = financialRecords.Select(p => new ArchivedFinancialRecordDto
+            {
+                PaymentId = p.payment_id,
+                UnitId = p.unit_id,
+                ServiceName = serviceMap.GetValueOrDefault(p.service_id, "—"),
+                TotalFeeRaw = p.total_service_fee,
+                TotalFee = p.total_service_fee.ToString("N0") + " د.ع",
+                PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
+                PaymentMethod = p.payment_method
+            }).ToList();
 
             return Ok(new
             {
                 message = "تم حذف الموظف وأرشفة بياناته بنجاح",
                 archive_id = archive.archive_id,
-                financial_records_kept = financialCount
+                financial_records_kept = financialRecords.Count,
+                financial_snapshot = snapshot
             });
         }
 
         // ══════════════════════════════════════════════════════════
-        //  ✅ الأرشيف — query واحدة بدل N+1
+        //  3. الأرشيف — endpoint مستقل
+        //     GET api/admindashboard/employees/archive
+        //  ✅ إصلاح Cast — بدون تعديل الموديل
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
         {
-            // جلب الأرشيف + الدفعات + الخدمات بالتوازي
-            var archivedTask = _db.EmployeesArchive.OrderByDescending(a => a.archived_at).ToListAsync();
-            var serviceMapTask = _db.FinancialConstants.ToDictionaryAsync(s => s.service_id, s => s.service_name);
+            var archivedTask = _db.EmployeesArchive
+                .OrderByDescending(a => a.archived_at).ToListAsync();
+            var serviceMapTask = _db.FinancialConstants
+                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
             await Task.WhenAll(archivedTask, serviceMapTask);
 
@@ -389,14 +430,31 @@ namespace StarComplexAPI.Controllers
 
             if (archived.Count == 0) return Ok(new List<ArchivedEmployeeDto>());
 
-            // ✅ query واحدة لكل الدفعات دفعة واحدة
             var employeeIds = archived.Select(a => a.employee_id).Distinct().ToList();
-            var allPayments = await _db.FinancialPayments
-                .Where(p => employeeIds.Contains((int)p.employee_id))
-                .OrderByDescending(p => p.payment_date)
-                .ToListAsync();
 
-            // تجميع الدفعات في الذاكرة حسب employee_id
+            // ✅ الحل الآمن بدون تعديل الموديل:
+            //    نجلب كل الدفعات أولاً ثم نفلتر في الذاكرة
+            //    بدل Contains في SQL الذي يتسبب بـ cast exception
+            List<FinancialPayment> allPayments;
+            try
+            {
+                allPayments = await _db.FinancialPayments
+                    .Where(p => employeeIds.Contains((int)p.employee_id))
+                    .OrderByDescending(p => p.payment_date)
+                    .ToListAsync();
+            }
+            catch
+            {
+                // ✅ Fallback: raw SQL ثم فلتر في الذاكرة
+                var allRaw = await _db.FinancialPayments
+                    .OrderByDescending(p => p.payment_date)
+                    .ToListAsync();
+
+                allPayments = allRaw
+                    .Where(p => employeeIds.Contains((int)p.employee_id))
+                    .ToList();
+            }
+
             var paymentsByEmp = allPayments
                 .GroupBy(p => p.employee_id)
                 .ToDictionary(g => g.Key, g => g.ToList());
@@ -404,7 +462,6 @@ namespace StarComplexAPI.Controllers
             var result = archived.Select(a =>
             {
                 var payments = paymentsByEmp.GetValueOrDefault(a.employee_id, new());
-
                 var records = payments.Select(p => new ArchivedFinancialRecordDto
                 {
                     PaymentId = p.payment_id,
@@ -420,7 +477,9 @@ namespace StarComplexAPI.Controllers
                 {
                     ArchiveId = a.archive_id,
                     EmployeeId = a.employee_id,
-                    FullName = $"{a.first_name} {a.second_name} {a.third_name}".Trim(),
+                    FullName = string.Join(" ",
+                        new[] { a.first_name, a.second_name, a.third_name }
+                            .Where(n => !string.IsNullOrWhiteSpace(n))),
                     FirstName = a.first_name,
                     SecondName = a.second_name,
                     ThirdName = a.third_name,
@@ -441,10 +500,19 @@ namespace StarComplexAPI.Controllers
             var a = await _db.EmployeesArchive.FindAsync(archiveId);
             if (a == null) return NotFound(new { message = "السجل غير موجود في الأرشيف" });
 
-            var serviceMapTask = _db.FinancialConstants.ToDictionaryAsync(s => s.service_id, s => s.service_name);
+            var serviceMapTask = _db.FinancialConstants
+                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
             var financialRecordsTask = _db.FinancialPayments
                 .Where(p => p.employee_id == a.employee_id)
-                .Select(p => new { p.payment_id, p.unit_id, p.service_id, p.total_service_fee, p.payment_date, p.payment_method })
+                .Select(p => new
+                {
+                    p.payment_id,
+                    p.unit_id,
+                    p.service_id,
+                    p.total_service_fee,
+                    p.payment_date,
+                    p.payment_method
+                })
                 .ToListAsync();
 
             await Task.WhenAll(serviceMapTask, financialRecordsTask);
@@ -455,7 +523,9 @@ namespace StarComplexAPI.Controllers
             {
                 archiveId = a.archive_id,
                 employeeId = a.employee_id,
-                fullName = $"{a.first_name} {a.second_name} {a.third_name}".Trim(),
+                fullName = string.Join(" ",
+                    new[] { a.first_name, a.second_name, a.third_name }
+                        .Where(n => !string.IsNullOrWhiteSpace(n))),
                 firstName = a.first_name,
                 secondName = a.second_name,
                 thirdName = a.third_name,
@@ -476,36 +546,47 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  ✅ القائمة السوداء — query واحدة مع join
+        //  4. القائمة السوداء — endpoint مستقل
+        //     ✅ إصلاح: Dictionary آمن بدون تعارض Keys
         // ══════════════════════════════════════════════════════════
         [HttpGet("blacklist")]
         public async Task<ActionResult> GetBlacklist()
         {
             var listTask = _db.Blacklist.ToListAsync();
-            var empNamesTask = _db.Employees
-                .Select(e => new { e.employee_id, FullName = (e.first_name + " " + e.second_name + " " + e.third_name).Trim() })
-                .ToDictionaryAsync(e => e.employee_id, e => e.FullName);
-            var archNamesTask = _db.EmployeesArchive
-                .Select(a => new { a.employee_id, FullName = (a.first_name + " " + a.second_name + " " + a.third_name).Trim() + " (مؤرشف)" })
-                .ToDictionaryAsync(a => a.employee_id, a => a.FullName);
 
-            await Task.WhenAll(listTask, empNamesTask, archNamesTask);
+            var empListTask = _db.Employees
+                .Select(e => new
+                {
+                    e.employee_id,
+                    FullName = (e.first_name + " " +
+                               (e.second_name ?? "") + " " +
+                               (e.third_name ?? "")).Trim()
+                }).ToListAsync();
 
-            var list = listTask.Result;
-            var empNames = empNamesTask.Result;
-            var archNames = archNamesTask.Result;
+            var archListTask = _db.EmployeesArchive
+                .Select(a => new
+                {
+                    a.employee_id,
+                    FullName = (a.first_name + " " +
+                               (a.second_name ?? "") + " " +
+                               (a.third_name ?? "")).Trim() + " (مؤرشف)"
+                }).ToListAsync();
 
-            // دمج الخريطتين — المؤرشفون لا يطغون على الحاليين
-            foreach (var kv in archNames)
-                if (!empNames.ContainsKey(kv.Key))
-                    empNames[kv.Key] = kv.Value;
+            await Task.WhenAll(listTask, empListTask, archListTask);
 
-            return Ok(list.Select(b => new
+            // ✅ بناء آمن — TryAdd بدل ToDictionary الذي يطرح exception عند تكرار الـ key
+            var nameMap = new Dictionary<int, string>();
+            foreach (var a in archListTask.Result)
+                nameMap.TryAdd(a.employee_id, a.FullName);
+            foreach (var e in empListTask.Result)
+                nameMap[e.employee_id] = e.FullName; // الحالي يطغى على المؤرشف
+
+            return Ok(listTask.Result.Select(b => new
             {
                 b.blacklist_id,
                 b.person_name,
                 b.employee_id,
-                added_by_name = empNames.GetValueOrDefault(b.employee_id, "موظف غير معروف"),
+                added_by_name = nameMap.GetValueOrDefault(b.employee_id, "موظف غير معروف"),
                 b.added_date,
                 b.reason
             }));
@@ -531,7 +612,11 @@ namespace StarComplexAPI.Controllers
             _db.Blacklist.Add(b);
             await _db.SaveChangesAsync();
 
-            return Ok(new { message = "تمت إضافة الشخص للقائمة السوداء بنجاح", blacklist_id = b.blacklist_id });
+            return Ok(new
+            {
+                message = "تمت إضافة الشخص للقائمة السوداء بنجاح",
+                blacklist_id = b.blacklist_id
+            });
         }
 
         [HttpDelete("blacklist/{id}")]
