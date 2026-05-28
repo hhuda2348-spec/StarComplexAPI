@@ -6,9 +6,7 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // ✅ Railway PORT env variable — محلياً يستخدم 5126
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5126";
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-
+builder.WebHost.UseUrls("http://0.0.0.0:5126");
 // ── قاعدة البيانات ─────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
                       ?? "Server=127.0.0.1;Database=star_complex;User=root;Password=12345;";
