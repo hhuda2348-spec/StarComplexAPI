@@ -147,9 +147,6 @@ namespace StarComplexAPI.Controllers
         {
             var now = DateTime.Now;
 
-            // ✅ الحل: تنفيذ جميع الاستعلامات بشكل متسلسل، بدون Task.WhenAll
-            // هذا يتجنب التنافس على DbContext
-
             var employee = await _db.Employees.FindAsync(employeeId);
             var totalResidents = await _db.Residents.CountAsync();
             var totalFamilyMembers = await _db.FamilyMembers.CountAsync();
@@ -162,14 +159,12 @@ namespace StarComplexAPI.Controllers
             var inProgressMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
             var totalPaymentCount = await _db.FinancialPayments.CountAsync();
 
-            // ✅ الإيرادات الإجمالية - ToList ثم Sum
             var allFees = await _db.FinancialPayments
                 .AsNoTracking()
                 .Select(p => p.total_service_fee)
                 .ToListAsync();
             var totalRevenue = allFees.Sum(f => f ?? 0m);
 
-            // ✅ الإيرادات الشهرية
             var monthFees = await _db.FinancialPayments
                 .AsNoTracking()
                 .Where(p => p.payment_date.Year == now.Year && p.payment_date.Month == now.Month)
@@ -177,26 +172,22 @@ namespace StarComplexAPI.Controllers
                 .ToListAsync();
             var monthlyRevenue = monthFees.Sum(f => f ?? 0m);
 
-            // ✅ خريطة الخدمات
             var serviceMap = await _db.FinancialConstants
                 .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
-            // ✅ أحدث الدفعات
             var recentPayments = await _db.FinancialPayments
                 .AsNoTracking()
                 .OrderByDescending(p => p.payment_date)
                 .Take(10)
                 .ToListAsync();
 
-            // ✅ أحدث طلبات الصيانة
             var recentMaintenance = await _db.MaintenanceRequests
                 .AsNoTracking()
                 .OrderByDescending(m => m.request_date)
                 .Take(8)
                 .ToListAsync();
 
-            // ✅ أعلى خدمة
             var topServiceData = await _db.FinancialPayments
                 .AsNoTracking()
                 .Where(p => p.service_id.HasValue)
@@ -205,7 +196,6 @@ namespace StarComplexAPI.Controllers
                 .OrderByDescending(x => x.Count)
                 .FirstOrDefaultAsync();
 
-            // ✅ معالجة البيانات
             var employeeName = employee is null ? "غير معروف"
                 : string.Join(" ", new[] { employee.first_name, employee.second_name, employee.third_name }
                     .Where(n => !string.IsNullOrWhiteSpace(n)));
@@ -220,7 +210,6 @@ namespace StarComplexAPI.Controllers
                 topServiceCount = $"{topServiceData.Count} طلب";
             }
 
-            // ✅ تحويل الدفعات
             var paymentDtos = recentPayments.Select(p => new DashboardPaymentItemDto
             {
                 PaymentId = $"#{p.payment_id}",
@@ -235,7 +224,6 @@ namespace StarComplexAPI.Controllers
                 PaymentMethod = p.payment_method ?? string.Empty
             }).ToList();
 
-            // ✅ تحويل الصيانة
             var maintenanceDtos = recentMaintenance.Select(m => new DashboardMaintenanceItemDto
             {
                 RequestId = $"#{m.request_id}",
@@ -350,15 +338,19 @@ namespace StarComplexAPI.Controllers
             var emp = await _db.Employees.FindAsync(id);
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
+            // ✅ جلب خريطة الخدمات
             var serviceMap = await _db.FinancialConstants
                 .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
+            // ✅ جلب السجلات المالية قبل الحذف
             var financialRecords = await _db.FinancialPayments
                 .AsNoTracking()
                 .Where(p => p.employee_id == (int?)id)
+                .OrderByDescending(p => p.payment_date)
                 .ToListAsync();
 
+            // ✅ إنشاء سجل الأرشيفة
             var archive = new EmployeeArchive
             {
                 employee_id = emp.employee_id,
@@ -370,20 +362,24 @@ namespace StarComplexAPI.Controllers
                 archived_at = DateTime.Now
             };
 
+            // ✅ إضافة السجل الأرشفة أولاً
             _db.EmployeesArchive.Add(archive);
             await _db.SaveChangesAsync();
 
+            // ✅ ثم حذف الموظف
             try
             {
                 _db.Employees.Remove(emp);
                 await _db.SaveChangesAsync();
             }
-            catch
+            catch (Exception ex)
             {
+                // إذا فشل الحذف، حاول SQL مباشر
                 await _db.Database.ExecuteSqlRawAsync(
                     "DELETE FROM employees WHERE employee_id = {0}", id);
             }
 
+            // ✅ تحضير snapshot السجلات المالية
             var snapshot = financialRecords.Select(p => new ArchivedFinancialRecordDto
             {
                 PaymentId = p.payment_id,
@@ -407,33 +403,39 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  الأرشيف
+        //  الأرشيف - ✅ محسّن للمشكلة
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
         {
+            // ✅ جلب جميع الموظفين المؤرشفين مع ترتيب تنازلي
             var archived = await _db.EmployeesArchive
                 .AsNoTracking()
-                .OrderByDescending(a => a.archived_at).ToListAsync();
+                .OrderByDescending(a => a.archived_at)
+                .ToListAsync();
 
+            if (archived.Count == 0)
+                return Ok(new List<ArchivedEmployeeDto>());
+
+            // ✅ جلب خريطة الخدمات
             var serviceMap = await _db.FinancialConstants
                 .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
-            if (archived.Count == 0) return Ok(new List<ArchivedEmployeeDto>());
-
+            // ✅ جلب جميع السجلات المالية للموظفين المؤرشفين
             var employeeIds = archived.Select(a => a.employee_id).Distinct().ToList();
-
             var allPayments = await _db.FinancialPayments
                 .AsNoTracking()
+                .Where(p => p.employee_id.HasValue && employeeIds.Contains(p.employee_id.Value))
                 .OrderByDescending(p => p.payment_date)
                 .ToListAsync();
 
+            // ✅ تجميع السجلات المالية حسب الموظف
             var paymentsByEmp = allPayments
-                .Where(p => p.employee_id.HasValue && employeeIds.Contains(p.employee_id.Value))
                 .GroupBy(p => p.employee_id!.Value)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
+            // ✅ تحويل إلى DTOs
             var result = archived.Select(a =>
             {
                 var payments = paymentsByEmp.GetValueOrDefault(a.employee_id, new());
@@ -484,6 +486,7 @@ namespace StarComplexAPI.Controllers
             var financialRecords = await _db.FinancialPayments
                 .AsNoTracking()
                 .Where(p => p.employee_id == (int?)a.employee_id)
+                .OrderByDescending(p => p.payment_date)
                 .Select(p => new
                 {
                     p.payment_id,
