@@ -559,6 +559,7 @@ namespace StarComplexAPI.Controllers
         // ══ استبدل دالة BuildQRPage القديمة بهذا الكود بالكامل ══
         // ══ استبدل دالة BuildQRPage القديمة بهذا الكود بالكامل لتحصل على المظهر الداكن الفخم ══
         // ══ دالة BuildQRPage المحدثة بالكامل: بدون المربع الكبير وببوكسات شفافة ومكبرة فخمة ══
+        // ══ دالة BuildQRPage المحدثة بالكامل: تصميم زجاجي فاخر، متناسق، ومتوسط الشاشة ══
         private static string BuildQRPage(
             Visit v, string status, string empName,
             string blockReason, string token, string name)
@@ -572,10 +573,10 @@ namespace StarComplexAPI.Controllers
 
             string extraRows = v.visitor_type == "خط نقل طلاب"
                 ? $"""
-                   <div class="row"><span class="lbl">أيام الدوام</span><span class="val">{v.selected_days ?? "—"}</span></div>
-                   <div class="row"><span class="lbl">وقت الذهاب</span><span class="val">{v.morning_window ?? "—"}</span></div>
-                   <div class="row"><span class="lbl">وقت الإياب</span><span class="val">{v.afternoon_window ?? "—"}</span></div>
-                   """
+           <div class="row"><span class="lbl">أيام الدوام</span><span class="val">{v.selected_days ?? "—"}</span></div>
+           <div class="row"><span class="lbl">وقت الذهاب</span><span class="val">{v.morning_window ?? "—"}</span></div>
+           <div class="row"><span class="lbl">وقت الإياب</span><span class="val">{v.afternoon_window ?? "—"}</span></div>
+           """
                 : $"""<div class="row"><span class="lbl">رقم السيارة</span><span class="val car">🚗 {v.car_number ?? "لا يوجد"}</span></div>""";
 
             string blacklistRow = status == "BLOCKED" && !string.IsNullOrEmpty(blockReason)
@@ -586,15 +587,15 @@ namespace StarComplexAPI.Controllers
                 ? v.expiry_date.Value.ToString("yyyy/MM/dd HH:mm") : "—";
 
             string actionButtons = status == "APPROVED" ? """
-                <div class="btn-row">
-                  <button class="btn btn-accept" onclick="recordAction('entry')">
-                    <span class="btn-icon">✅</span>قبول الدخول
-                  </button>
-                  <button class="btn btn-reject" onclick="recordAction('reject')">
-                    <span class="btn-icon">🚫</span>رفض الدخول
-                  </button>
-                </div>
-                """ : "";
+        <div class="btn-row">
+          <button class="btn btn-accept" onclick="recordAction('entry')">
+            <span class="btn-icon">✅</span>قبول الدخول
+          </button>
+          <button class="btn btn-reject" onclick="recordAction('reject')">
+            <span class="btn-icon">🚫</span>رفض الدخول
+          </button>
+        </div>
+        """ : "";
 
             string visitIdStr = v.visit_id?.ToString() ?? "—";
             string visitorName = v.visitor_name ?? "—";
@@ -606,329 +607,433 @@ namespace StarComplexAPI.Controllers
             string tokenJs = token.Replace("\\", "\\\\").Replace("'", "\\'");
 
             return $$"""
-                <!DOCTYPE html>
-                <html dir="rtl" lang="ar">
-                <head>
-                  <meta charset="utf-8">
-                  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-                  <title>تصريح #{{visitIdStr}}</title>
-                  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;600;700;900&display=swap" rel="stylesheet">
-                  <style>
-                    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-                    :root{
-                      --accent: {{accentColor}};
-                      --bg: #0F0204;
-                      --surface: rgba(30, 4, 7, 0.8);
-                      --panel: rgba(42, 8, 13, 0.6);
-                      --card: rgba(54, 13, 19, 0.7);
-                      --border: #52131D;
-                      --text: #FFFFFF;
-                      --muted: #E2D7D9;
-                      --faint: rgba(82, 19, 29, 0.4);
-                      --gold: #E5C158;
-                      --gold-dim: rgba(229,193,88,.15);
-                    }
-                    body{
-                      font-family:'Tajawal',sans-serif;
-                      background: var(--bg);
-                      color: var(--text);
-                      min-height:100vh;
-                      padding: 24px 16px;
-                      -webkit-font-smoothing: antialiased;
-                      display: flex;
-                      flex-direction: column;
-                      align-items: center;
-                    }
-                    body::before {
-                      content: ''; position: fixed; inset: 0;
-                      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.15) 2px,rgba(0,0,0,.15) 4px);
-                      pointer-events: none; z-index: 0;
-                    }
-                    
-                    /* تم إلغاء المربع الكبير المقيد وجعل الحاوية ممتدة واحترافية */
-                    .main-container {
-                      width: 100%;
-                      max-width: 600px;
-                      position: relative;
-                      z-index: 1;
-                      animation: fadeIn .4s ease-out;
-                    }
-                    @keyframes fadeIn{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:translateY(0)}
+        <!DOCTYPE html>
+        <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+          <title>تصريح #{{visitIdStr}}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+          <style>
+            *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            :root {
+              --accent: {{accentColor}};
+              --bg: #0b0204;
+              --surface: rgba(25, 6, 10, 0.65);
+              --panel: rgba(45, 12, 18, 0.45);
+              --card: rgba(65, 18, 26, 0.6);
+              --border: rgba(239, 68, 68, 0.15);
+              --text: #FFFFFF;
+              --muted: #CDBCBF;
+              --gold: #E5C158;
+              --gold-dim: rgba(229, 193, 88, 0.1);
+            }
 
-                    .header{
-                      padding: 20px 10px 32px;
-                      text-align:center;
-                    }
-                    .status-icon{
-                      font-size: 64px; display:block; margin-bottom:14px;
-                      filter:drop-shadow(0 0 15px var(--accent));
-                    }
-                    .status-badge{
-                      display:inline-block;
-                      background: var(--surface);
-                      color: var(--text);
-                      border: 2px solid var(--accent);
-                      padding: 10px 28px; border-radius: 50px;
-                      font-size: 16px; font-weight: 800;
-                      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
-                    }
-                    .permit-id{
-                      margin-top: 14px; font-size: 14px; color: var(--gold);
-                      font-weight: 700; letter-spacing: 0.5px;
-                    }
+            body {
+              font-family: 'Tajawal', sans-serif;
+              background: radial-gradient(circle at center, #1f050a 0%, var(--bg) 100%);
+              color: var(--text);
+              min-height: 100vh;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              padding: 20px;
+              -webkit-font-smoothing: antialiased;
+            }
 
-                    .section-title{
-                      font-size: 14px; font-weight: 800; color: var(--gold);
-                      margin: 10px 0 16px; padding-bottom: 8px;
-                      border-bottom: 2px solid var(--border);
-                    }
-                    
-                    /* بوكسات شفافة، مكبرة، ومتباعدة بشكل احترافي */
-                    .rows{display:flex;flex-direction:column;gap:12px;margin-bottom:24px}
-                    .row{
-                      display:flex; justify-content:space-between; align-items:center;
-                      padding: 18px 20px;
-                      background: var(--panel);
-                      border: 1px solid var(--faint);
-                      border-radius: 16px;
-                      backdrop-filter: blur(4px);
-                      transition: all .25s ease;
-                    }
-                    .row:hover{
-                      background: var(--card); 
-                      border-color: var(--border);
-                      transform: scale(1.01);
-                    }
-                    .row.danger{background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.3);}
-                    .lbl{font-size: 14px; color: var(--muted); font-weight: 600;}
-                    .val{font-size: 16px; font-weight: 700; color: var(--text)}
-                    .val.accent{color: var(--gold); text-shadow: 0 0 8px rgba(229,193,88,0.3);}
-                    
-                    .status-chip{
-                      display:inline-flex; align-items:center; gap:6px;
-                      padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 700;
-                      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                    }
-                    .chip-accepted{background:rgba(34,197,94,.2); color:#22C55E; border:1px solid rgba(34,197,94,.5)}
-                    .chip-inside  {background:rgba(59,130,246,.2); color:#3B82F6; border:1px solid rgba(59,130,246,.5)}
-                    .chip-rejected{background:rgba(239,68,68,.2); color:#EF4444; border:1px solid rgba(239,68,68,.5)}
-                    .chip-expired {background:rgba(245,158,11,.2); color:#F59E0B; border:1px solid rgba(245,158,11,.5)}
-                    
-                    .action-result{
-                      padding: 16px; border-radius: 14px;
-                      text-align:center; font-size: 14px; font-weight: 700;
-                      display:none; margin-bottom: 20px;
-                    }
-                    .action-result.ok {background:rgba(34,197,94,.15); color:#22C55E; border:1px solid rgba(34,197,94,.3)}
-                    .action-result.err{background:rgba(239,68,68,.15); color:#EF4444; border:1px solid rgba(239,68,68,.3)}
-                    
-                    .btn-row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom: 24px}
-                    .btn{
-                      height: 54px; border:none; border-radius: 16px;
-                      font-family:'Tajawal',sans-serif; font-size: 15px; font-weight: 700;
-                      cursor:pointer; transition:.2s ease; display:flex; align-items:center;
-                      justify-content:center; gap:8px;
-                    }
-                    .btn-accept{background:#22C55E; color:#000; box-shadow:0 4px 14px rgba(34,197,94,.3)}
-                    .btn-accept:hover:not(:disabled){background:#16A34A; transform:translateY(-1px); box-shadow:0 6px 18px rgba(34,197,94,.45)}
-                    .btn-reject{background:#EF4444; color:#fff; box-shadow:0 4px 14px rgba(239,68,68,.3)}
-                    .btn-reject:hover:not(:disabled){background:#DC2626; transform:translateY(-1px); box-shadow:0 6px 18px rgba(239,68,68,.45)}
-                    .btn:disabled{opacity:.35; cursor:not-allowed; transform:none!important}
-                    
-                    .report-wrap{
-                      background: var(--surface);
-                      border: 1px solid var(--border);
-                      border-radius: 20px; padding: 20px;
-                      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-                    }
-                    .report-title{font-size: 14px; font-weight: 800; color: var(--amber); margin-bottom: 14px;
-                                  display:flex; align-items:center; gap:6px; border-bottom: 1px solid var(--border); padding-bottom: 8px;}
-                    #reportNotes{
-                      width:100%; height: 90px;
-                      background: var(--panel);
-                      border: 1px solid var(--border);
-                      border-radius: 12px; color: var(--text);
-                      font-family:'Tajawal',sans-serif; font-size: 14px;
-                      padding: 14px; resize:none; outline:none;
-                    }
-                    #reportNotes:focus{border-color:var(--gold); background:var(--card); box-shadow:0 0 0 3px var(--gold-dim)}
-                    #reportNotes::placeholder{color:rgba(255,255,255,0.3)}
-                    #reportSeverity{
-                      width:100%; margin-top: 12px; padding: 12px;
-                      background: var(--panel); border: 1px solid var(--border);
-                      border-radius: 12px; color: var(--text);
-                      font-family:'Tajawal',sans-serif; font-size: 14px; outline:none;
-                    }
-                    .btn-report{
-                      width:100%; height: 48px; margin-top: 16px;
-                      border:none; border-radius: 12px;
-                      background: linear-gradient(135deg, #E5C158, #AA8417);
-                      color:#000; font-family:'Tajawal',sans-serif;
-                      font-size: 15px; font-weight: 700; cursor:pointer; transition:.2s ease;
-                    }
-                    .btn-report:hover{transform:translateY(-1px); box-shadow:0 4px 14px rgba(229,193,88,.4)}
-                    #reportMsg{font-size:13px; margin-top:12px; display:none; text-align:center; font-weight:700; padding:10px; border-radius:8px}
-                    #reportMsg.ok {background:rgba(34,197,94,.15); color:#22C55E}
-                    #reportMsg.err{background:rgba(239,68,68,.15); color:#EF4444}
-                    
-                    .footer{
-                      margin-top: 28px; padding-top: 16px;
-                      border-top: 1px solid var(--border);
-                      display:flex; justify-content:space-between;
-                      font-size: 13px; color: var(--muted);
-                    }
-                    .security-note{
-                      margin-top: 18px; padding: 12px;
-                      background: var(--panel);
-                      border: 1px solid var(--faint);
-                      border-radius: 12px; font-size: 12px; color: var(--gold);
-                      text-align:center; font-weight: 600;
-                    }
-                  </style>
-                </head>
-                <body>
-                  <div class="main-container">
-                    <div class="header">
-                      <span class="status-icon">{{statusIcon}}</span>
-                      <div class="status-badge">{{statusAr}}</div>
-                      <div class="permit-id">🔐 رقم التصريح: #{{visitIdStr}}</div>
-                    </div>
+            /* الحاوية الرئيسية ممركزة ومنظمة بالكامل */
+            .main-container {
+              width: 100%;
+              max-width: 520px;
+              background: var(--surface);
+              border: 1px solid rgba(255, 255, 255, 0.06);
+              border-radius: 28px;
+              padding: 30px;
+              backdrop-filter: blur(16px);
+              -webkit-backdrop-filter: blur(16px);
+              box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+              animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            }
 
-                    <div class="section-title">📋 بيانات الزائر</div>
-                    <div class="rows">
-                      <div class="row">
-                        <span class="lbl">اسم الزائر</span>
-                        <span class="val">{{visitorName}}</span>
-                      </div>
-                      <div class="row">
-                        <span class="lbl">نوع الزيارة</span>
-                        <span class="val">{{visitorType}}</span>
-                      </div>
-                      <div class="row">
-                        <span class="lbl">رقم الوحدة</span>
-                        <span class="val accent">{{unitId}}</span>
-                      </div>
-                      {{extraRows}}
-                      {{blacklistRow}}
-                      <div class="row">
-                        <span class="lbl">الحالة</span>
-                        <span id="statusChip">{{visitStatus}}</span>
-                      </div>
-                      <div class="row">
-                        <span class="lbl">صالح حتى</span>
-                        <span class="val">{{expiryFormatted}}</span>
-                      </div>
-                    </div>
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(20px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
 
-                    <div class="action-result" id="actionResult"></div>
-                    {{actionButtons}}
+            .header {
+              text-align: center;
+              margin-bottom: 25px;
+              padding-bottom: 20px;
+              border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
 
-                    <div class="report-wrap">
-                      <div class="report-title">📋 إرسال بلاغ أمني</div>
-                      <textarea id="reportNotes" placeholder="اكتب تفاصيل البلاغ أو الملاحظة الأمنية…"></textarea>
-                      <select id="reportSeverity">
-                        <option value="INFO">معلومة</option>
-                        <option value="WARNING" selected>⚠️ تحذير</option>
-                        <option value="REJECTED">🚨 خطر</option>
-                      </select>
-                      <button class="btn-report" onclick="submitReport()">📤 إرسال البلاغ</button>
-                      <div id="reportMsg"></div>
-                    </div>
+            .status-icon {
+              font-size: 56px;
+              display: block;
+              margin-bottom: 12px;
+              filter: drop-shadow(0 0 20px var(--accent));
+            }
 
-                    <div class="security-note">
-                      🔒 هذه البيانات متاحة فقط لموظفي الأمن المصرح لهم
-                    </div>
+            .status-badge {
+              display: inline-block;
+              background: rgba(255, 255, 255, 0.05);
+              color: #fff;
+              border: 1px solid var(--accent);
+              padding: 8px 24px;
+              border-radius: 50px;
+              font-size: 16px;
+              font-weight: 700;
+              box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            }
 
-                    <div class="footer">
-                      <span>👤 {{empName}}</span>
-                      <span>🕐 {{nowFmt}}</span>
-                    </div>
-                  </div>
+            .permit-id {
+              margin-top: 12px;
+              font-size: 13px;
+              color: var(--gold);
+              font-weight: 700;
+              letter-spacing: 0.5px;
+            }
 
-                  <script>
-                    const VISIT_ID = {{visitIdStr}};
-                    const TOKEN    = '{{tokenJs}}';
-                    const EMP_NAME = '{{nameJs}}';
+            .section-title {
+              font-size: 14px;
+              font-weight: 700;
+              color: var(--gold);
+              margin: 20px 0 12px;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+            }
 
-                    function getStatusChip(status) {
-                      const map = {
-                        'مقبولة':    ['chip-accepted','✅ مقبولة'],
-                        'داخل الآن':['chip-inside','🔵 داخل الآن'],
-                        'مرفوضة':   ['chip-rejected','🚫 مرفوضة'],
-                        'منتهية':    ['chip-expired','⏰ منتهية'],
-                      };
-                      const [cls, lbl] = map[status] || ['chip-default', status];
-                      return `<span class="status-chip ${cls}">${lbl}</span>`;
-                    }
+            .rows {
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+              margin-bottom: 20px;
+            }
 
-                    document.getElementById('statusChip').innerHTML = getStatusChip('{{visitStatus}}');
+            .row {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              padding: 14px 18px;
+              background: var(--panel);
+              border: 1px solid rgba(255, 255, 255, 0.03);
+              border-radius: 14px;
+              transition: all 0.25s ease;
+            }
 
-                    async function recordAction(type) {
-                      const isEntry  = type === 'entry';
-                      const endpoint = isEntry ? 'RecordEntry' : 'RejectVisit';
-                      const url      = `/api/Security/${endpoint}/${VISIT_ID}?employeeCode=${encodeURIComponent(TOKEN)}&employeeFullName=${encodeURIComponent(EMP_NAME)}`;
-                      const btnRow   = document.querySelector('.btn-row');
-                      const resultEl = document.getElementById('actionResult');
-                      
-                      if (btnRow) btnRow.querySelectorAll('.btn').forEach(b => { b.disabled = true; b.textContent = 'جارٍ التنفيذ…'; });
+            .row:hover {
+              background: var(--card);
+              border-color: rgba(255, 255, 255, 0.08);
+              transform: translateX(-3px);
+            }
 
-                      try {
-                        const res  = await fetch(url, { method: 'POST' });
-                        const data = await res.json();
-                        if (res.ok) {
-                          resultEl.className   = 'action-result ok';
-                          resultEl.textContent = isEntry ? '✅ تم قبول الدخول بنجاح' : '🚫 تم رفض الدخول';
-                          resultEl.style.display = 'block';
-                          if (btnRow) btnRow.style.display = 'none';
-                          document.getElementById('statusChip').innerHTML = getStatusChip(isEntry ? 'داخل الآن' : 'مرفوضة');
-                        } else {
-                          resultEl.className     = 'action-result err';
-                          resultEl.textContent   = '❌ ' + (data.message || 'فشلت العملية');
-                          resultEl.style.display = 'block';
-                          resetBtns(btnRow);
-                        }
-                      } catch {
-                        resultEl.className     = 'action-result err';
-                        resultEl.textContent   = '❌ خطأ في الاتصال بالسيرفر';
-                        resultEl.style.display = 'block';
-                        resetBtns(btnRow);
-                      }
-                    }
+            .row.danger {
+              background: rgba(239, 68, 68, 0.1);
+              border-color: rgba(239, 68, 68, 0.2);
+            }
 
-                    function resetBtns(btnRow) {
-                      if (!btnRow) return;
-                      btnRow.querySelectorAll('.btn').forEach(b => {
-                        b.disabled = false;
-                        b.innerHTML = b.classList.contains('btn-accept') 
-                          ? '<span class="btn-icon">✅</span>قبول الدخول' 
-                          : '<span class="btn-icon">🚫</span>رفض الدخول';
-                      });
-                    }
+            .lbl {
+              font-size: 14px;
+              color: var(--muted);
+              font-weight: 500;
+            }
 
-                    async function submitReport() {
-                      const notes    = document.getElementById('reportNotes').value.trim();
-                      const severity = document.getElementById('reportSeverity').value;
-                      const msgEl    = document.getElementById('reportMsg');
-                      if (!notes) { msgEl.className = 'err'; msgEl.style.display = 'block'; msgEl.textContent = '❌ يرجى كتابة تفاصيل البلاغ'; return; }
-                      try {
-                        const res  = await fetch('/api/Security/SubmitReport', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ employeeCode: TOKEN, employeeFullName: EMP_NAME, visitId: VISIT_ID, notes, severity })
-                        });
-                        const data = await res.json();
-                        msgEl.className     = res.ok ? 'ok' : 'err';
-                        msgEl.style.display = 'block';
-                        msgEl.textContent   = res.ok ? '✅ ' + data.message : '❌ ' + data.message;
-                        if (res.ok) document.getElementById('reportNotes').value = '';
-                      } catch {
-                        msgEl.className = 'err'; msgEl.style.display = 'block'; msgEl.textContent = '❌ خطأ في الاتصال';
-                      }
-                    }
-                  </script>
-                </body>
-                </html>
-                """;
+            .val {
+              font-size: 15px;
+              font-weight: 700;
+              color: var(--text);
+            }
+
+            .val.accent {
+              color: var(--gold);
+            }
+
+            /* ستايل الـ Chips الملونة لحالة التصريح */
+            .status-chip {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              padding: 6px 14px;
+              border-radius: 12px;
+              font-size: 13px;
+              font-weight: 700;
+            }
+            .chip-accepted { background: rgba(34, 197, 94, 0.15); color: #22C55E; border: 1px solid rgba(34, 197, 94, 0.3); }
+            .chip-inside   { background: rgba(59, 130, 246, 0.15); color: #3B82F6; border: 1px solid rgba(59, 130, 246, 0.3); }
+            .chip-rejected { background: rgba(239, 68, 68, 0.15); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+            .chip-expired  { background: rgba(245, 158, 11, 0.15); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+            .action-result {
+              padding: 15px;
+              border-radius: 14px;
+              text-align: center;
+              font-size: 14px;
+              font-weight: 700;
+              display: none;
+              margin-bottom: 15px;
+            }
+            .action-result.ok { background: rgba(34, 197, 94, 0.15); color: #22C55E; border: 1px solid rgba(34, 197, 94, 0.3); }
+            .action-result.err { background: rgba(239, 68, 68, 0.15); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+            /* الأزرار مصفوفة بشكل متجاوب */
+            .btn-row {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 12px;
+              margin-bottom: 20px;
+            }
+
+            .btn {
+              height: 48px;
+              border: none;
+              border-radius: 14px;
+              font-family: 'Tajawal', sans-serif;
+              font-size: 14px;
+              font-weight: 700;
+              cursor: pointer;
+              transition: all 0.2s ease;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 6px;
+            }
+
+            .btn-accept { background: #22C55E; color: #05160b; box-shadow: 0 4px 15px rgba(34, 197, 94, 0.25); }
+            .btn-accept:hover:not(:disabled) { background: #16a34a; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4); }
+            
+            .btn-reject { background: #EF4444; color: #ffffff; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.25); }
+            .btn-reject:hover:not(:disabled) { background: #dc2626; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4); }
+            
+            .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+            /* ستايل مجمع البلاغات الأمني */
+            .report-wrap {
+              background: rgba(255, 255, 255, 0.02);
+              border: 1px solid rgba(255, 255, 255, 0.05);
+              border-radius: 18px;
+              padding: 16px;
+              margin-top: 15px;
+            }
+
+            #reportNotes {
+              width: 100%;
+              height: 80px;
+              background: rgba(0, 0, 0, 0.3);
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-radius: 10px;
+              color: var(--text);
+              font-family: 'Tajawal', sans-serif;
+              font-size: 13px;
+              padding: 12px;
+              resize: none;
+              outline: none;
+              transition: all 0.2s;
+            }
+
+            #reportNotes:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+            #reportNotes::placeholder { color: rgba(255, 255, 255, 0.25); }
+
+            #reportSeverity {
+              width: 100%;
+              margin-top: 10px;
+              padding: 10px;
+              background: #1a080d;
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-radius: 10px;
+              color: var(--text);
+              font-family: 'Tajawal', sans-serif;
+              font-size: 13px;
+              outline: none;
+            }
+
+            .btn-report {
+              width: 100%;
+              height: 42px;
+              margin-top: 12px;
+              border: none;
+              border-radius: 10px;
+              background: linear-gradient(135deg, #E5C158, #AA8417);
+              color: #1a1200;
+              font-family: 'Tajawal', sans-serif;
+              font-size: 14px;
+              font-weight: 700;
+              cursor: pointer;
+              transition: all 0.2s;
+            }
+            .btn-report:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(229, 193, 88, 0.3); }
+
+            #reportMsg { font-size: 12px; margin-top: 10px; display: none; text-align: center; font-weight: 700; padding: 8px; border-radius: 8px; }
+            #reportMsg.ok { background: rgba(34, 197, 94, 0.1); color: #22C55E; }
+            #reportMsg.err { background: rgba(239, 68, 68, 0.1); color: #EF4444; }
+
+            .security-note {
+              margin-top: 20px;
+              padding: 10px;
+              background: rgba(229, 193, 88, 0.05);
+              border: 1px solid rgba(229, 193, 88, 0.15);
+              border-radius: 10px;
+              font-size: 11px;
+              color: var(--gold);
+              text-align: center;
+              font-weight: 500;
+            }
+
+            .footer {
+              margin-top: 25px;
+              padding-top: 14px;
+              border-top: 1px solid rgba(255, 255, 255, 0.06);
+              display: flex;
+              justify-content: space-between;
+              font-size: 12px;
+              color: var(--muted);
+            }
+          </style>
+        </head>
+        <body>
+          <div class="main-container">
+            <div class="header">
+              <span class="status-icon">{{statusIcon}}</span>
+              <div class="status-badge">{{statusAr}}</div>
+              <div class="permit-id">🔐 رقم التصريح: #{{visitIdStr}}</div>
+            </div>
+
+            <div class="section-title">📋 بيانات الزائر</div>
+            <div class="rows">
+              <div class="row">
+                <span class="lbl">اسم الزائر</span>
+                <span class="val">{{visitorName}}</span>
+              </div>
+              <div class="row">
+                <span class="lbl">نوع الزيارة</span>
+                <span class="val">{{visitorType}}</span>
+              </div>
+              <div class="row">
+                <span class="lbl">رقم الوحدة</span>
+                <span class="val accent">{{unitId}}</span>
+              </div>
+              {{extraRows}}
+              {{blacklistRow}}
+              <div class="row">
+                <span class="lbl">الحالة</span>
+                <span id="statusChip">{{visitStatus}}</span>
+              </div>
+              <div class="row">
+                <span class="lbl">صالح حتى</span>
+                <span class="val">{{expiryFormatted}}</span>
+              </div>
+            </div>
+
+            <div class="action-result" id="actionResult"></div>
+            {{actionButtons}}
+
+            <div class="report-wrap">
+              <div class="section-title" style="margin: 0 0 10px 0;">🚨 إرسال بلاغ أمني</div>
+              <textarea id="reportNotes" placeholder="اكتب تفاصيل البلاغ أو الملاحظة الأمنية…"></textarea>
+              <select id="reportSeverity">
+                <option value="INFO">معلومة</option>
+                <option value="WARNING" selected>⚠️ تحذير</option>
+                <option value="REJECTED">🚨 خطر</option>
+              </select>
+              <button class="btn-report" onclick="submitReport()">📤 إرسال البلاغ</button>
+              <div id="reportMsg"></div>
+            </div>
+
+            <div class="security-note">
+              🔒 هذه البيانات متاحة فقط لموظفي الأمن المصرح لهم
+            </div>
+
+            <div class="footer">
+              <span>👤 {{empName}}</span>
+              <span>🕐 {{nowFmt}}</span>
+            </div>
+          </div>
+
+          <script>
+            const VISIT_ID = {{visitIdStr}};
+            const TOKEN    = '{{tokenJs}}';
+            const EMP_NAME = '{{nameJs}}';
+
+            function getStatusChip(status) {
+              const map = {
+                'مقبولة':    ['chip-accepted','✅ مقبولة'],
+                'داخل الآن':['chip-inside','🔵 داخل الآن'],
+                'مرفوضة':   ['chip-rejected','🚫 مرفوضة'],
+                'منتهية':    ['chip-expired','⏰ منتهية'],
+              };
+              const [cls, lbl] = map[status] || ['chip-inside', status];
+              return `<span class="status-chip ${cls}">${lbl}</span>`;
+            }
+
+            document.getElementById('statusChip').innerHTML = getStatusChip('{{visitStatus}}');
+
+            async function recordAction(type) {
+              const isEntry  = type === 'entry';
+              const endpoint = isEntry ? 'RecordEntry' : 'RejectVisit';
+              const url      = `/api/Security/${endpoint}/${VISIT_ID}?employeeCode=${encodeURIComponent(TOKEN)}&employeeFullName=${encodeURIComponent(EMP_NAME)}`;
+              const btnRow   = document.querySelector('.btn-row');
+              const resultEl = document.getElementById('actionResult');
+              
+              if (btnRow) btnRow.querySelectorAll('.btn').forEach(b => { b.disabled = true; b.textContent = 'جارٍ التنفيذ…'; });
+
+              try {
+                const res  = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                  resultEl.className   = 'action-result ok';
+                  resultEl.textContent = isEntry ? '✅ تم قبول الدخول بنجاح' : '🚫 تم رفض الدخول';
+                  resultEl.style.display = 'block';
+                  if (btnRow) btnRow.style.display = 'none';
+                  document.getElementById('statusChip').innerHTML = getStatusChip(isEntry ? 'داخل الآن' : 'مرفوضة');
+                } else {
+                  resultEl.className     = 'action-result err';
+                  resultEl.textContent   = '❌ ' + (data.message || 'فشلت العملية');
+                  resultEl.style.display = 'block';
+                  resetBtns(btnRow);
+                }
+              } catch {
+                resultEl.className     = 'action-result err';
+                resultEl.textContent   = '❌ خطأ في الاتصال بالسيرفر';
+                resultEl.style.display = 'block';
+                resetBtns(btnRow);
+              }
+            }
+
+            function resetBtns(btnRow) {
+              if (!btnRow) return;
+              btnRow.querySelectorAll('.btn').forEach(b => {
+                b.disabled = false;
+                b.innerHTML = b.classList.contains('btn-accept') 
+                  ? '<span class="btn-icon">✅</span>قبول الدخول' 
+                  : '<span class="btn-icon">🚫</span>رفض الدخول';
+              });
+            }
+
+            async function submitReport() {
+              const notes    = document.getElementById('reportNotes').value.trim();
+              const severity = document.getElementById('reportSeverity').value;
+              const msgEl    = document.getElementById('reportMsg');
+              if (!notes) { msgEl.className = 'err'; msgEl.style.display = 'block'; msgEl.textContent = '❌ يرجى كتابة تفاصيل البلاغ'; return; }
+              try {
+                const res  = await fetch('/api/Security/SubmitReport', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ employeeCode: TOKEN, employeeFullName: EMP_NAME, visitId: VISIT_ID, notes, severity })
+                });
+                const data = await res.json();
+                msgEl.className     = res.ok ? 'ok' : 'err';
+                msgEl.style.display = 'block';
+                msgEl.textContent   = res.ok ? '✅ ' + data.message : '❌ ' + data.message;
+                if (res.ok) document.getElementById('reportNotes').value = '';
+              } catch {
+                msgEl.className = 'err'; msgEl.style.display = 'block'; msgEl.textContent = '❌ خطأ في الاتصال';
+              }
+            }
+          </script>
+        </body>
+        </html>
+        """;
         }
         // ══ DTOs ══════════════════════════════════════════════════════
 
