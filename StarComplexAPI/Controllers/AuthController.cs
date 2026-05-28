@@ -245,12 +245,12 @@ public class AuthController : ControllerBase
         var sName = names.Length > 1 ? names[1] : "";
         var tName = names.Length > 2 ? string.Join(" ", names.Skip(2)) : "";
 
-        Resident? resident = await _context.Residents
-     .FirstOrDefaultAsync(r =>
-         r.unit_id == unit.unit_id &&
-         (r.first_name ?? "") == fName &&
-         (r.second_name ?? "") == sName &&
-         (r.third_name ?? "") == tName);
+       Resident? resident = await _context.Residents
+    .FirstOrDefaultAsync(r =>
+        r.unit_id == unit.unit_id &&
+        (r.first_name ?? "") == fName &&
+        (r.second_name ?? "") == sName &&
+        (r.third_name ?? "") == tName);
         if (resident != null)
         {
             if (!string.IsNullOrEmpty(resident.name_hash))
