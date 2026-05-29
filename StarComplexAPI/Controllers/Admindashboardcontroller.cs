@@ -469,11 +469,7 @@ namespace StarComplexAPI.Controllers
             if (id == requestingEmployeeId)
                 return BadRequest(new { message = "لا يمكنك حذف حسابك الخاص" });
 
-            // ✅ AsNoTracking لتجنب مشكلة RowVersion في EF Core
-            var emp = await _db.Employees
-                .AsNoTracking()
-                .FirstOrDefaultAsync(e => e.employee_id == id);
-
+            var emp = await _db.Employees.FindAsync(id);
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
             // ✅ جلب خريطة الخدمات
@@ -484,73 +480,60 @@ namespace StarComplexAPI.Controllers
             // ✅ جلب السجلات المالية قبل الحذف
             var financialRecords = await _db.FinancialPayments
                 .AsNoTracking()
-                .Where(p => p.employee_id != null && (int)p.employee_id == id)
+                .Where(p => p.employee_id == (int?)id)
                 .OrderByDescending(p => p.payment_date)
                 .ToListAsync();
 
-            // ✅ Transaction يضمن الأرشفة والحذف معاً أو لا شيء
-            using var transaction = await _db.Database.BeginTransactionAsync();
+            // ✅ إنشاء سجل الأرشيفة
+            var archive = new EmployeeArchive
+            {
+                employee_id = emp.employee_id,
+                first_name = emp.first_name,
+                second_name = emp.second_name,
+                third_name = emp.third_name,
+                job_title = emp.job_title,
+                phone_number = emp.phone_number,
+                archived_at = DateTime.Now
+            };
+
+            // ✅ إضافة السجل الأرشفة أولاً
+            _db.EmployeesArchive.Add(archive);
+            await _db.SaveChangesAsync();
+
+            // ✅ ثم حذف الموظف
             try
             {
-                // الخطوة 1: أرشفة بيانات الموظف بـ Raw SQL (يتجنب RowVersion)
-                var now = DateTime.Now;
-                await _db.Database.ExecuteSqlRawAsync(@"
-                    INSERT INTO employees_archive
-                        (employee_id, first_name, second_name, third_name, job_title, phone_number, archived_at)
-                    VALUES
-                        ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
-                    emp.employee_id,
-                    (object?)emp.first_name ?? DBNull.Value,
-                    (object?)emp.second_name ?? DBNull.Value,
-                    (object?)emp.third_name ?? DBNull.Value,
-                    (object?)emp.job_title ?? DBNull.Value,
-                    (object?)emp.phone_number ?? DBNull.Value,
-                    now);
-
-                // الخطوة 2: جلب الـ archive_id المُنشأ
-                var archiveId = await _db.EmployeesArchive
-                    .Where(a => a.employee_id == id)
-                    .OrderByDescending(a => a.archive_id)
-                    .Select(a => a.archive_id)
-                    .FirstOrDefaultAsync();
-
-                // الخطوة 3: حذف الموظف بـ Raw SQL (يتجاوز RowVersion تماماً)
-                var rowsDeleted = await _db.Database.ExecuteSqlRawAsync(
-                    "DELETE FROM employees WHERE employee_id = {0}", id);
-
-                if (rowsDeleted == 0)
-                    throw new Exception("فشل حذف الموظف — لم يُعثر عليه في قاعدة البيانات");
-
-                await transaction.CommitAsync();
-
-                // ✅ تحضير snapshot السجلات المالية
-                var snapshot = financialRecords.Select(p => new ArchivedFinancialRecordDto
-                {
-                    PaymentId = p.payment_id,
-                    UnitId = p.unit_id,
-                    ServiceName = p.service_id.HasValue
-                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
-                        : "—",
-                    TotalFeeRaw = p.total_service_fee ?? 0m,
-                    TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
-                    PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
-                    PaymentMethod = p.payment_method ?? string.Empty
-                }).ToList();
-
-                return Ok(new
-                {
-                    message = "تم حذف الموظف وأرشفة بياناته بنجاح",
-                    archive_id = archiveId,
-                    financial_records_kept = financialRecords.Count,
-                    financial_snapshot = snapshot
-                });
+                _db.Employees.Remove(emp);
+                await _db.SaveChangesAsync();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                await transaction.RollbackAsync();
-                System.Diagnostics.Debug.WriteLine($"DeleteEmployee Error: {ex.Message}");
-                return StatusCode(500, new { message = $"فشل العملية: {ex.Message}" });
+                // إذا فشل الحذف، حاول SQL مباشر
+                await _db.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM employees WHERE employee_id = {0}", id);
             }
+
+            // ✅ تحضير snapshot السجلات المالية
+            var snapshot = financialRecords.Select(p => new ArchivedFinancialRecordDto
+            {
+                PaymentId = p.payment_id,
+                UnitId = p.unit_id,
+                ServiceName = p.service_id.HasValue
+                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
+                    : "—",
+                TotalFeeRaw = p.total_service_fee ?? 0m,
+                TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
+                PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
+                PaymentMethod = p.payment_method ?? string.Empty
+            }).ToList();
+
+            return Ok(new
+            {
+                message = "تم حذف الموظف وأرشفة بياناته بنجاح",
+                archive_id = archive.archive_id,
+                financial_records_kept = financialRecords.Count,
+                financial_snapshot = snapshot
+            });
         }
 
         // ══════════════════════════════════════════════════════════
