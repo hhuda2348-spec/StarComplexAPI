@@ -372,7 +372,7 @@ namespace StarComplexAPI.Controllers
                 _db.Employees.Remove(emp);
                 await _db.SaveChangesAsync();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // إذا فشل الحذف، حاول SQL مباشر
                 await _db.Database.ExecuteSqlRawAsync(
@@ -403,7 +403,7 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  الأرشيف - ✅ محسّن للمشكلة
+        //  الأرشيف - ✅ الإصلاح الكامل لمشكلة عدم ظهور الموظفين
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
@@ -422,23 +422,28 @@ namespace StarComplexAPI.Controllers
                 .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
-            // ✅ جلب جميع السجلات المالية للموظفين المؤرشفين
-            var employeeIds = archived.Select(a => a.employee_id).Distinct().ToList();
+            // ✅ الإصلاح: تحويل employee_id إلى int صريح قبل المقارنة
+            //    لتجنب مشكلة EF Core مع nullable int و Contains
+            var employeeIds = archived
+                .Select(a => a.employee_id)
+                .Distinct()
+                .ToList();
+
             var allPayments = await _db.FinancialPayments
                 .AsNoTracking()
-                .Where(p => p.employee_id.HasValue && employeeIds.Contains(p.employee_id.Value))
+                .Where(p => p.employee_id != null && employeeIds.Contains((int)p.employee_id))
                 .OrderByDescending(p => p.payment_date)
                 .ToListAsync();
 
             // ✅ تجميع السجلات المالية حسب الموظف
             var paymentsByEmp = allPayments
-                .GroupBy(p => p.employee_id!.Value)
+                .GroupBy(p => (int)p.employee_id!)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
             // ✅ تحويل إلى DTOs
             var result = archived.Select(a =>
             {
-                var payments = paymentsByEmp.GetValueOrDefault(a.employee_id, new());
+                var payments = paymentsByEmp.GetValueOrDefault(a.employee_id, new List<FinancialPayment>());
                 var records = payments.Select(p => new ArchivedFinancialRecordDto
                 {
                     PaymentId = p.payment_id,
@@ -476,16 +481,20 @@ namespace StarComplexAPI.Controllers
         [HttpGet("employees/archive/{archiveId}")]
         public async Task<ActionResult> GetArchivedEmployee(int archiveId)
         {
-            var a = await _db.EmployeesArchive.AsNoTracking().FirstOrDefaultAsync(x => x.archive_id == archiveId);
+            var a = await _db.EmployeesArchive
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.archive_id == archiveId);
+
             if (a == null) return NotFound(new { message = "السجل غير موجود في الأرشيف" });
 
             var serviceMap = await _db.FinancialConstants
                 .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
+            // ✅ الإصلاح: نفس نمط الإصلاح للـ single record
             var financialRecords = await _db.FinancialPayments
                 .AsNoTracking()
-                .Where(p => p.employee_id == (int?)a.employee_id)
+                .Where(p => p.employee_id != null && (int)p.employee_id == a.employee_id)
                 .OrderByDescending(p => p.payment_date)
                 .Select(p => new
                 {
