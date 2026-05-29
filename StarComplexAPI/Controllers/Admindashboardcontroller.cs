@@ -329,79 +329,6 @@ namespace StarComplexAPI.Controllers
             });
         }
 
-        [HttpDelete("employees/{id}")]
-        public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
-        {
-            if (id == requestingEmployeeId)
-                return BadRequest(new { message = "لا يمكنك حذف حسابك الخاص" });
-
-            var emp = await _db.Employees.FindAsync(id);
-            if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
-
-            // ✅ جلب خريطة الخدمات
-            var serviceMap = await _db.FinancialConstants
-                .AsNoTracking()
-                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-
-            // ✅ جلب السجلات المالية قبل الحذف
-            var financialRecords = await _db.FinancialPayments
-                .AsNoTracking()
-                .Where(p => p.employee_id == (int?)id)
-                .OrderByDescending(p => p.payment_date)
-                .ToListAsync();
-
-            // ✅ إنشاء سجل الأرشيفة
-            var archive = new EmployeeArchive
-            {
-                employee_id = emp.employee_id,
-                first_name = emp.first_name,
-                second_name = emp.second_name,
-                third_name = emp.third_name,
-                job_title = emp.job_title,
-                phone_number = emp.phone_number,
-                archived_at = DateTime.Now
-            };
-
-            // ✅ إضافة السجل الأرشفة أولاً
-            _db.EmployeesArchive.Add(archive);
-            await _db.SaveChangesAsync();
-
-            // ✅ ثم حذف الموظف
-            try
-            {
-                _db.Employees.Remove(emp);
-                await _db.SaveChangesAsync();
-            }
-            catch (Exception)
-            {
-                // إذا فشل الحذف، حاول SQL مباشر
-                await _db.Database.ExecuteSqlRawAsync(
-                    "DELETE FROM employees WHERE employee_id = {0}", id);
-            }
-
-            // ✅ تحضير snapshot السجلات المالية
-            var snapshot = financialRecords.Select(p => new ArchivedFinancialRecordDto
-            {
-                PaymentId = p.payment_id,
-                UnitId = p.unit_id,
-                ServiceName = p.service_id.HasValue
-                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
-                    : "—",
-                TotalFeeRaw = p.total_service_fee ?? 0m,
-                TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
-                PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
-                PaymentMethod = p.payment_method ?? string.Empty
-            }).ToList();
-
-            return Ok(new
-            {
-                message = "تم حذف الموظف وأرشفة بياناته بنجاح",
-                archive_id = archive.archive_id,
-                financial_records_kept = financialRecords.Count,
-                financial_snapshot = snapshot
-            });
-        }
-
         // ══════════════════════════════════════════════════════════
         //  الأرشيف - ✅ الإصلاح الكامل لمشكلة عدم ظهور الموظفين
         // ══════════════════════════════════════════════════════════
@@ -478,7 +405,7 @@ namespace StarComplexAPI.Controllers
             return Ok(result);
         }
 
-        [HttpGet("employees/archive/{archiveId}")]
+        [HttpGet("employees/archive/{archiveId:int}")]
         public async Task<ActionResult> GetArchivedEmployee(int archiveId)
         {
             var a = await _db.EmployeesArchive
@@ -532,6 +459,80 @@ namespace StarComplexAPI.Controllers
                     paymentMethod = p.payment_method ?? string.Empty
                 }),
                 financialCount = financialRecords.Count
+            });
+        }
+
+
+        [HttpDelete("employees/{id:int}")]
+        public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
+        {
+            if (id == requestingEmployeeId)
+                return BadRequest(new { message = "لا يمكنك حذف حسابك الخاص" });
+
+            var emp = await _db.Employees.FindAsync(id);
+            if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
+
+            // ✅ جلب خريطة الخدمات
+            var serviceMap = await _db.FinancialConstants
+                .AsNoTracking()
+                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
+
+            // ✅ جلب السجلات المالية قبل الحذف
+            var financialRecords = await _db.FinancialPayments
+                .AsNoTracking()
+                .Where(p => p.employee_id == (int?)id)
+                .OrderByDescending(p => p.payment_date)
+                .ToListAsync();
+
+            // ✅ إنشاء سجل الأرشيفة
+            var archive = new EmployeeArchive
+            {
+                employee_id = emp.employee_id,
+                first_name = emp.first_name,
+                second_name = emp.second_name,
+                third_name = emp.third_name,
+                job_title = emp.job_title,
+                phone_number = emp.phone_number,
+                archived_at = DateTime.Now
+            };
+
+            // ✅ إضافة السجل الأرشفة أولاً
+            _db.EmployeesArchive.Add(archive);
+            await _db.SaveChangesAsync();
+
+            // ✅ ثم حذف الموظف
+            try
+            {
+                _db.Employees.Remove(emp);
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception)
+            {
+                // إذا فشل الحذف، حاول SQL مباشر
+                await _db.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM employees WHERE employee_id = {0}", id);
+            }
+
+            // ✅ تحضير snapshot السجلات المالية
+            var snapshot = financialRecords.Select(p => new ArchivedFinancialRecordDto
+            {
+                PaymentId = p.payment_id,
+                UnitId = p.unit_id,
+                ServiceName = p.service_id.HasValue
+                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—")
+                    : "—",
+                TotalFeeRaw = p.total_service_fee ?? 0m,
+                TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
+                PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
+                PaymentMethod = p.payment_method ?? string.Empty
+            }).ToList();
+
+            return Ok(new
+            {
+                message = "تم حذف الموظف وأرشفة بياناته بنجاح",
+                archive_id = archive.archive_id,
+                financial_records_kept = financialRecords.Count,
+                financial_snapshot = snapshot
             });
         }
 
