@@ -5,6 +5,10 @@ using StarComplexAPI.Models;
 
 namespace StarComplexAPI.Controllers
 {
+    // ══════════════════════════════════════════════════════════
+    //  DTOs
+    // ══════════════════════════════════════════════════════════
+
     public class DashboardKpiDto
     {
         public int TotalResidents { get; set; }
@@ -59,6 +63,25 @@ namespace StarComplexAPI.Controllers
         public List<DashboardMaintenanceItemDto> RecentMaintenance { get; set; } = new();
     }
 
+    // ──────────────────────────────────────────────────────────
+    //  DTO سجل مالي واحد ضمن الأرشيف
+    //  يعتمد على: FinancialPayment + FinancialConstant
+    // ──────────────────────────────────────────────────────────
+    public class ArchivedFinancialRecordDto
+    {
+        public int PaymentId { get; set; }
+        public int UnitId { get; set; }
+        public string ServiceName { get; set; } = string.Empty;
+        public decimal TotalFeeRaw { get; set; }
+        public string TotalFee { get; set; } = string.Empty;
+        public string PaymentDate { get; set; } = string.Empty;
+        public string PaymentMethod { get; set; } = string.Empty;
+    }
+
+    // ──────────────────────────────────────────────────────────
+    //  DTO موظف مؤرشف
+    //  يعتمد على: EmployeeArchive + FinancialPayment + FinancialConstant
+    // ──────────────────────────────────────────────────────────
     public class ArchivedEmployeeDto
     {
         public int ArchiveId { get; set; }
@@ -72,17 +95,6 @@ namespace StarComplexAPI.Controllers
         public DateTime ArchivedAt { get; set; }
         public int FinancialRecordsCount { get; set; }
         public List<ArchivedFinancialRecordDto> FinancialRecords { get; set; } = new();
-    }
-
-    public class ArchivedFinancialRecordDto
-    {
-        public int PaymentId { get; set; }
-        public int UnitId { get; set; }
-        public string ServiceName { get; set; } = string.Empty;
-        public string TotalFee { get; set; } = string.Empty;
-        public decimal TotalFeeRaw { get; set; }
-        public string PaymentDate { get; set; } = string.Empty;
-        public string PaymentMethod { get; set; } = string.Empty;
     }
 
     public class AddBlacklistRequest
@@ -157,7 +169,7 @@ namespace StarComplexAPI.Controllers
             var totalUnits = await _db.HousingUnits.CountAsync();
             var pendingVisits = await _db.Visits.CountAsync(v => v.visit_status == "معلقة");
             var todayVisits = await _db.Visits.CountAsync(v =>
-                                           v.visit_date.HasValue && v.visit_date.Value.Date == DateTime.Today);
+                v.visit_date.HasValue && v.visit_date.Value.Date == DateTime.Today);
             var openMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد الانتظار");
             var inProgressMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
             var totalPaymentCount = await _db.FinancialPayments.CountAsync();
@@ -218,7 +230,7 @@ namespace StarComplexAPI.Controllers
                 PaymentId = $"#{p.payment_id}",
                 UnitId = p.unit_id.ToString(),
                 ServiceName = p.service_id.HasValue
-                                     ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
+                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
                 TotalFeeRaw = p.total_service_fee ?? 0m,
                 TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                 PaymentDateRaw = p.payment_date,
@@ -332,17 +344,18 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  حذف موظف
+        //  حذف موظف مع الأرشفة
         //
-        //  المشكلة: financial_payments.employee_id يشير إلى employees
-        //  بـ FK Constraint — يمنع حذف الموظف مباشرة.
+        //  لا يوجد FK Constraint بين financial_payments.employee_id
+        //  وجدول employees — لذا:
+        //    ✅ نحذف الموظف مباشرة بعد أرشفته
+        //    ✅ employee_id يبقى كما هو في financial_payments
+        //    ✅ نقدر لاحقاً نجيب سجلاته عبر employees_archive.employee_id
         //
-        //  الحل: داخل transaction واحدة:
-        //    1) نجلب السجلات المالية ونحفظها كـ snapshot قبل أي تعديل
-        //    2) نُدرج الموظف في employees_archive
-        //    3) نُفرغ employee_id في financial_payments (SET NULL)
-        //    4) نُفرغ employee_id في blacklist إن وُجد (SET NULL)
-        //    5) نحذف الموظف — الآن لا يوجد FK يمنع الحذف
+        //  الخطوات:
+        //    1) أرشفة الموظف في employees_archive
+        //    2) فك ارتباط blacklist فقط (لأنه قد يكون فيه constraint)
+        //    3) حذف الموظف — financial_payments تبقى بـ employee_id أصلي
         // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id:int}")]
         public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
@@ -354,26 +367,17 @@ namespace StarComplexAPI.Controllers
                 .AsNoTracking()
                 .FirstOrDefaultAsync(e => e.employee_id == id);
 
-            if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
+            if (emp == null)
+                return NotFound(new { message = "الموظف غير موجود" });
 
-            // ✅ جلب خريطة الخدمات
-            var serviceMap = await _db.FinancialConstants
-                .AsNoTracking()
-                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-
-            // ✅ جلب السجلات المالية قبل أي تعديل — نحتاجها للـ snapshot
-            var financialRecords = await _db.FinancialPayments
-                .AsNoTracking()
-                .Where(p => p.employee_id != null && (int)p.employee_id == id)
-                .OrderByDescending(p => p.payment_date)
-                .ToListAsync();
+            // جلب عدد سجلاته المالية قبل الحذف للـ response
+            var financialCount = await _db.FinancialPayments
+                .CountAsync(p => p.employee_id == id);
 
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                var now = DateTime.Now;
-
-                // ── الخطوة 1: أرشفة الموظف بـ Raw SQL ──────────────
+                // ── الخطوة 1: أرشفة الموظف في employees_archive ──────
                 await _db.Database.ExecuteSqlRawAsync(@"
                     INSERT INTO employees_archive
                         (employee_id, first_name, second_name, third_name,
@@ -386,31 +390,22 @@ namespace StarComplexAPI.Controllers
                     (object?)emp.third_name ?? DBNull.Value,
                     (object?)emp.job_title ?? DBNull.Value,
                     (object?)emp.phone_number ?? DBNull.Value,
-                    now);
+                    DateTime.Now);
 
-                // جلب الـ archive_id المُنشأ للتو
+                // جلب الـ archive_id المُنشأ
                 var archiveId = await _db.EmployeesArchive
                     .Where(a => a.employee_id == id)
                     .OrderByDescending(a => a.archive_id)
                     .Select(a => a.archive_id)
                     .FirstOrDefaultAsync();
 
-                // ── الخطوة 2: فك ارتباط financial_payments ──────────
-                // SET NULL على employee_id حتى يمكن حذف الموظف
-                // السجلات المالية تبقى في قاعدة البيانات — فقط تفقد
-                // الارتباط المباشر بالموظف (تم حفظ الـ snapshot مسبقاً)
-                await _db.Database.ExecuteSqlRawAsync(
-                    "UPDATE financial_payments SET employee_id = NULL WHERE employee_id = {0}", id);
-
-                // ── الخطوة 3: فك ارتباط blacklist (إن وُجد) ─────────
+                // ── الخطوة 2: فك ارتباط blacklist فقط ───────────────
+                // financial_payments لا تحتاج SET NULL (لا يوجد FK)
+                // employee_id يبقى كما هو — يُستخدم لاحقاً في الأرشيف
                 await _db.Database.ExecuteSqlRawAsync(
                     "UPDATE blacklist SET employee_id = 0 WHERE employee_id = {0}", id);
-                // ملاحظة: لو عمود employee_id في blacklist لا يقبل NULL
-                // استخدم 0 أو قيمة افتراضية حسب schema الجدول
-                // لو يقبل NULL: "UPDATE blacklist SET employee_id = NULL WHERE employee_id = {0}"
 
-                // ── الخطوة 4: حذف الموظف ─────────────────────────────
-                // الآن لا يوجد أي FK يشير إليه — الحذف سينجح
+                // ── الخطوة 3: حذف الموظف ─────────────────────────────
                 var rowsDeleted = await _db.Database.ExecuteSqlRawAsync(
                     "DELETE FROM employees WHERE employee_id = {0}", id);
 
@@ -419,25 +414,15 @@ namespace StarComplexAPI.Controllers
 
                 await transaction.CommitAsync();
 
-                // ── بناء snapshot للـ response ───────────────────────
-                var snapshot = financialRecords.Select(p => new ArchivedFinancialRecordDto
-                {
-                    PaymentId = p.payment_id,
-                    UnitId = p.unit_id,
-                    ServiceName = p.service_id.HasValue
-                                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
-                    TotalFeeRaw = p.total_service_fee ?? 0m,
-                    TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
-                    PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
-                    PaymentMethod = p.payment_method ?? string.Empty
-                }).ToList();
-
                 return Ok(new
                 {
                     message = "تم حذف الموظف وأرشفة بياناته بنجاح",
                     archive_id = archiveId,
-                    financial_records_kept = financialRecords.Count,
-                    financial_snapshot = snapshot
+                    employee_id = emp.employee_id,
+                    full_name = string.Join(" ",
+                        new[] { emp.first_name, emp.second_name, emp.third_name }
+                            .Where(n => !string.IsNullOrWhiteSpace(n))),
+                    financial_records_kept = financialCount
                 });
             }
             catch (Exception ex)
@@ -449,7 +434,14 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  الأرشيف
+        //  الأرشيف — يعتمد على:
+        //    - EmployeeArchive   (employees_archive)
+        //    - FinancialPayment  (financial_payments)  ← employee_id محفوظ
+        //    - FinancialConstant (financial_constants) ← لجلب اسم الخدمة
+        //
+        //  الرابط: employees_archive.employee_id = financial_payments.employee_id
+        //  هذا يشتغل لأنه لا يوجد FK Constraint — الـ employee_id بقي
+        //  في financial_payments بعد الحذف ولم يُمسح
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
@@ -462,45 +454,62 @@ namespace StarComplexAPI.Controllers
             if (archived.Count == 0)
                 return Ok(new List<ArchivedEmployeeDto>());
 
+            // خريطة الخدمات من financial_constants
             var serviceMap = await _db.FinancialConstants
                 .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
-            var employeeIds = archived
+            // جلب كل employee_ids من الأرشيف
+            var archivedEmployeeIds = archived
                 .Select(a => a.employee_id)
                 .Distinct()
                 .ToList();
 
-            // ✅ بعد الحذف صار employee_id = NULL في financial_payments
-            //    لذا نجلب السجلات بطريقة مختلفة:
-            //    نحتاج نربط السجلات المالية بالأرشيف عبر جدول وسيط
-            //    أو نستخدم البيانات المحفوظة في الـ snapshot وقت الحذف
-            //
-            //    الحل العملي: نجلب كل المدفوعات التي employee_id فيها
-            //    يطابق أحد الـ employeeIds — لكن بعد الحذف صار NULL
-            //
-            //    ✅ الحل الصحيح: لازم تضيف عمود archived_employee_id
-            //    في financial_payments أو تخزن snapshot في جدول منفصل.
-            //
-            //    مؤقتاً: نُرجع الموظفين المؤرشفين بدون سجلاتهم المالية
-            //    (لأنها فُكّت FK وصارت employee_id = NULL)
-            //    ولو تريد السجلات تحتاج migration — شوف التعليق في الأسفل
+            // جلب كل المدفوعات المرتبطة بهؤلاء الموظفين دفعة واحدة
+            // الرابط: financial_payments.employee_id = employees_archive.employee_id
+            var allPayments = await _db.FinancialPayments
+                .AsNoTracking()
+                .Where(p => p.employee_id != null && archivedEmployeeIds.Contains((int)p.employee_id))
+                .OrderByDescending(p => p.payment_date)
+                .ToListAsync();
 
-            var result = archived.Select(a => new ArchivedEmployeeDto
+            // تجميع المدفوعات بحسب employee_id
+            var paymentsByEmployee = allPayments
+                .GroupBy(p => (int)p.employee_id!)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var result = archived.Select(a =>
             {
-                ArchiveId = a.archive_id,
-                EmployeeId = a.employee_id,
-                FullName = string.Join(" ",
-                    new[] { a.first_name, a.second_name, a.third_name }
-                        .Where(n => !string.IsNullOrWhiteSpace(n))),
-                FirstName = a.first_name,
-                SecondName = a.second_name,
-                ThirdName = a.third_name,
-                JobTitle = a.job_title,
-                PhoneNumber = a.phone_number,
-                ArchivedAt = a.archived_at,
-                FinancialRecordsCount = 0,   // ← مؤقت (شوف التعليق أعلى)
-                FinancialRecords = new()
+                var payments = paymentsByEmployee.GetValueOrDefault(a.employee_id, new());
+
+                var financialRecords = payments.Select(p => new ArchivedFinancialRecordDto
+                {
+                    PaymentId = p.payment_id,
+                    UnitId = p.unit_id,
+                    ServiceName = p.service_id.HasValue
+                                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
+                    TotalFeeRaw = p.total_service_fee ?? 0m,
+                    TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
+                    PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
+                    PaymentMethod = p.payment_method ?? string.Empty
+                }).ToList();
+
+                return new ArchivedEmployeeDto
+                {
+                    ArchiveId = a.archive_id,
+                    EmployeeId = a.employee_id,
+                    FullName = string.Join(" ",
+                        new[] { a.first_name, a.second_name, a.third_name }
+                            .Where(n => !string.IsNullOrWhiteSpace(n))),
+                    FirstName = a.first_name,
+                    SecondName = a.second_name,
+                    ThirdName = a.third_name,
+                    JobTitle = a.job_title,
+                    PhoneNumber = a.phone_number,
+                    ArchivedAt = a.archived_at,
+                    FinancialRecordsCount = financialRecords.Count,
+                    FinancialRecords = financialRecords
+                };
             }).ToList();
 
             return Ok(result);
@@ -513,23 +522,47 @@ namespace StarComplexAPI.Controllers
                 .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.archive_id == archiveId);
 
-            if (a == null) return NotFound(new { message = "السجل غير موجود في الأرشيف" });
+            if (a == null)
+                return NotFound(new { message = "السجل غير موجود في الأرشيف" });
 
-            return Ok(new
+            var serviceMap = await _db.FinancialConstants
+                .AsNoTracking()
+                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
+
+            // جلب سجلات هذا الموظف تحديداً عبر employee_id
+            var payments = await _db.FinancialPayments
+                .AsNoTracking()
+                .Where(p => p.employee_id == a.employee_id)
+                .OrderByDescending(p => p.payment_date)
+                .ToListAsync();
+
+            var financialRecords = payments.Select(p => new ArchivedFinancialRecordDto
             {
-                archiveId = a.archive_id,
-                employeeId = a.employee_id,
-                fullName = string.Join(" ",
+                PaymentId = p.payment_id,
+                UnitId = p.unit_id,
+                ServiceName = p.service_id.HasValue
+                                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
+                TotalFeeRaw = p.total_service_fee ?? 0m,
+                TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
+                PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
+                PaymentMethod = p.payment_method ?? string.Empty
+            }).ToList();
+
+            return Ok(new ArchivedEmployeeDto
+            {
+                ArchiveId = a.archive_id,
+                EmployeeId = a.employee_id,
+                FullName = string.Join(" ",
                     new[] { a.first_name, a.second_name, a.third_name }
                         .Where(n => !string.IsNullOrWhiteSpace(n))),
-                firstName = a.first_name,
-                secondName = a.second_name,
-                thirdName = a.third_name,
-                jobTitle = a.job_title,
-                phoneNumber = a.phone_number,
-                archivedAt = a.archived_at,
-                financialRecords = new List<object>(), // مؤقت
-                financialCount = 0
+                FirstName = a.first_name,
+                SecondName = a.second_name,
+                ThirdName = a.third_name,
+                JobTitle = a.job_title,
+                PhoneNumber = a.phone_number,
+                ArchivedAt = a.archived_at,
+                FinancialRecordsCount = financialRecords.Count,
+                FinancialRecords = financialRecords
             });
         }
 
@@ -699,7 +732,9 @@ namespace StarComplexAPI.Controllers
 
         [HttpGet("available-units")]
         public async Task<ActionResult> GetAvailableUnits()
-            => Ok(await _db.HousingUnits.AsNoTracking().Where(u => u.unit_status == "فارغ").ToListAsync());
+            => Ok(await _db.HousingUnits.AsNoTracking()
+                .Where(u => u.unit_status == "فارغ")
+                .ToListAsync());
 
         // ══════════════════════════════════════════════════════════
         //  مساعد
