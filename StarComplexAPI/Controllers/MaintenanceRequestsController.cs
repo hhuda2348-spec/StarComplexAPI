@@ -1,10 +1,8 @@
-﻿// StarComplexAPI/Controllers/MaintenanceRequestsController.cs
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StarComplexAPI.Data;
 using StarComplexAPI.Models;
 using System.Text.Json.Serialization;
-using train.Models;
 
 namespace StarComplexAPI.Controllers
 {
@@ -19,10 +17,6 @@ namespace StarComplexAPI.Controllers
             _context = context;
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // GET /api/MaintenanceRequests
-        // يرجع جميع الطلبات مع JOIN للخدمات والوحدات
-        // ═══════════════════════════════════════════════════════════════
         [HttpGet]
         public async Task<ActionResult<IEnumerable<MaintenanceRequestDtoMANAG>>> GetRequests()
         {
@@ -44,8 +38,9 @@ namespace StarComplexAPI.Controllers
                                 unit_type = unit != null ? unit.unit_type : null,
                                 unit_status = unit != null ? unit.unit_status : null,
                                 request_date = req.request_date,
+                                // ✅ الحالة الافتراضية "قيد الانتظار" بدلاً من "جديد"
                                 request_status = req.request_status ?? "قيد الانتظار",
-                                feedback = req.feedback ?? string.Empty
+                                feedback = req.feedback ?? string.Empty,
                             };
 
                 var result = await query.OrderByDescending(q => q.request_date).ToListAsync();
@@ -57,21 +52,17 @@ namespace StarComplexAPI.Controllers
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // GET /api/MaintenanceRequests/services
-        // ═══════════════════════════════════════════════════════════════
         [HttpGet("services")]
         public async Task<ActionResult<IEnumerable<ServiceDtoMANAG>>> GetServices()
         {
             try
             {
                 var services = await _context.FinancialConstants
-                    .OrderBy(s => s.service_id)
                     .Select(s => new ServiceDtoMANAG
                     {
-                        ServiceId = s.service_id,
-                        ServiceName = s.service_name,
-                        ServicePrice = s.service_price
+                        service_id = s.service_id,
+                        service_name = s.service_name,
+                        service_price = s.service_price
                     })
                     .ToListAsync();
 
@@ -83,9 +74,6 @@ namespace StarComplexAPI.Controllers
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // POST /api/MaintenanceRequests/create
-        // ═══════════════════════════════════════════════════════════════
         [HttpPost("create")]
         public async Task<IActionResult> CreateRequest([FromBody] MaintenanceCreateRequest request)
         {
@@ -109,8 +97,9 @@ namespace StarComplexAPI.Controllers
                     unit_id = request.unit_id,
                     service_id = request.service_id,
                     request_date = DateTime.Now,
+                    // ✅ الحالة الافتراضية عند الإنشاء
                     request_status = "قيد الانتظار",
-                    feedback = request.feedback ?? string.Empty
+                    feedback = request.feedback ?? string.Empty,
                 };
 
                 _context.MaintenanceRequests.Add(maintenanceEntry);
@@ -130,38 +119,63 @@ namespace StarComplexAPI.Controllers
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // DTOs — MaintenanceRequestsController
-    // ═══════════════════════════════════════════════════════════════════
+    // ── DTOs ──────────────────────────────────────────────────
 
-    /// <summary>
-    /// DTO يُرسَل للعميل — يحتوي على بيانات من JOIN
-    /// </summary>
     public class MaintenanceRequestDtoMANAG
     {
-        [JsonPropertyName("request_id")] public int request_id { get; set; }
-        [JsonPropertyName("unit_id")] public int unit_id { get; set; }
-        [JsonPropertyName("service_id")] public int service_id { get; set; }
-        [JsonPropertyName("service_name")] public string service_name { get; set; } = string.Empty;
-        [JsonPropertyName("service_price")] public decimal service_price { get; set; }
-        [JsonPropertyName("unit_type")] public string? unit_type { get; set; }
-        [JsonPropertyName("unit_status")] public string? unit_status { get; set; }
-        [JsonPropertyName("request_date")] public DateTime request_date { get; set; }
-        [JsonPropertyName("request_status")] public string request_status { get; set; } = string.Empty;
-        [JsonPropertyName("feedback")] public string feedback { get; set; } = string.Empty;
+        [JsonPropertyName("request_id")]
+        public int request_id { get; set; }
+
+        [JsonPropertyName("unit_id")]
+        public int unit_id { get; set; }
+
+        [JsonPropertyName("service_id")]
+        public int service_id { get; set; }
+
+        [JsonPropertyName("service_name")]
+        public string service_name { get; set; } = string.Empty;
+
+        [JsonPropertyName("service_price")]
+        public decimal service_price { get; set; }
+
+        [JsonPropertyName("unit_type")]
+        public string? unit_type { get; set; }
+
+        [JsonPropertyName("unit_status")]
+        public string? unit_status { get; set; }
+
+        [JsonPropertyName("request_date")]
+        public DateTime request_date { get; set; }
+
+        [JsonPropertyName("request_status")]
+        public string request_status { get; set; } = string.Empty;
+
+        // ✅ feedback فقط — user_feedback_status محذوف نهائياً
+        [JsonPropertyName("feedback")]
+        public string feedback { get; set; } = string.Empty;
     }
 
     public class ServiceDtoMANAG
     {
-        [JsonPropertyName("service_id")] public int ServiceId { get; set; }
-        [JsonPropertyName("service_name")] public string ServiceName { get; set; } = string.Empty;
-        [JsonPropertyName("service_price")] public decimal ServicePrice { get; set; }
+        [JsonPropertyName("service_id")]
+        public int service_id { get; set; }
+
+        [JsonPropertyName("service_name")]
+        public string service_name { get; set; } = string.Empty;
+
+        [JsonPropertyName("service_price")]
+        public decimal service_price { get; set; }
     }
 
     public class MaintenanceCreateRequest
     {
-        [JsonPropertyName("unit_id")] public int unit_id { get; set; }
-        [JsonPropertyName("service_id")] public int service_id { get; set; }
-        [JsonPropertyName("feedback")] public string feedback { get; set; } = string.Empty;
+        [JsonPropertyName("unit_id")]
+        public int unit_id { get; set; }
+
+        [JsonPropertyName("service_id")]
+        public int service_id { get; set; }
+
+        [JsonPropertyName("feedback")]
+        public string feedback { get; set; } = string.Empty;
     }
 }
