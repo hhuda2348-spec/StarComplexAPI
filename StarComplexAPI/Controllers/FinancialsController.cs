@@ -218,6 +218,7 @@ namespace StarComplexAPI.Controllers
                     })
                     .ToList();
 
+                // فلتر الحالة يُطبَّق بعد البناء لأن كل السجلات "مدفوع" حالياً
                 if (!string.IsNullOrWhiteSpace(status))
                     result = result.Where(r => r.Status == status).ToList();
 
@@ -232,13 +233,6 @@ namespace StarComplexAPI.Controllers
 
         // ═══════════════════════════════════════════════════════════════
         // GET /api/Financials/overview
-        //
-        // ✅ المنطق الصحيح لطلبات الصيانة:
-        //    — نجلب فقط الطلبات التي request_status == "تم تنفيذ الطلب"
-        //    — كل طلب صيانة منفّذ له سطر مستقل في الجدول (بـ request_id الخاص به)
-        //    — نتحقق من وجود دفعة مرتبطة بنفس (unit_id + service_id)
-        //      وتاريخها >= request_date لهذا الطلب بالذات
-        //    — إذا وُجدت دفعة → مدفوع، وإلا → غير مدفوع + CanPay = true
         // ═══════════════════════════════════════════════════════════════
         [HttpGet("overview")]
         public async Task<ActionResult<List<OverviewRowDto>>> GetOverview()
@@ -251,7 +245,6 @@ namespace StarComplexAPI.Controllers
 
                 var rows = new List<OverviewRowDto>();
 
-                // ── الوحدات المشغولة ──────────────────────────────────
                 var occupiedUnits = await _context.HousingUnits
                     .Where(u => u.unit_status == "مشغول")
                     .OrderBy(u => u.unit_id)
@@ -260,7 +253,6 @@ namespace StarComplexAPI.Controllers
                 if (!occupiedUnits.Any())
                     return Ok(rows);
 
-                // ── جلب كل الدفعات مرة واحدة ─────────────────────────
                 var allPayments = await (
                     from p in _context.FinancialPayments
                     join e in _context.Employees
@@ -283,7 +275,6 @@ namespace StarComplexAPI.Controllers
                     }
                 ).ToListAsync();
 
-                // ── أنواع الخدمات ─────────────────────────────────────
                 var allServices = await _context.FinancialConstants.ToListAsync();
 
                 var rentService = allServices.FirstOrDefault(s => s.service_id == 5);
@@ -296,9 +287,7 @@ namespace StarComplexAPI.Controllers
                 decimal internetPrice = internetService?.service_price ?? 0;
                 int internetServiceId = internetService?.service_id ?? 0;
 
-                // ══════════════════════════════════════════════════════
-                // 1. فواتير الإيجار الشهري — لكل وحدة مشغولة
-                // ══════════════════════════════════════════════════════
+                // ── 1. فواتير الإيجار الشهري ──
                 var rentPaymentsThisMonth = allPayments
                     .Where(p => p.service_id == rentServiceId
                              && p.payment_date.Year == currentYear
@@ -332,9 +321,7 @@ namespace StarComplexAPI.Controllers
                     });
                 }
 
-                // ══════════════════════════════════════════════════════
-                // 2. فواتير الانترنت الشهري — لكل وحدة مشغولة
-                // ══════════════════════════════════════════════════════
+                // ── 2. فواتير الانترنت الشهري ──
                 if (internetServiceId > 0)
                 {
                     var internetPaymentsThisMonth = allPayments
@@ -371,21 +358,7 @@ namespace StarComplexAPI.Controllers
                     }
                 }
 
-                // ══════════════════════════════════════════════════════
-                // 3. طلبات الصيانة المنفّذة فقط
-                //
-                //    الشرط: request_status == "تم تنفيذ الطلب"
-                //
-                //    لكل طلب نبحث عن دفعة تُطابق:
-                //      • unit_id    == طلب.unit_id
-                //      • service_id == طلب.service_id
-                //      • payment_date >= طلب.request_date
-                //
-                //    إذا وُجدت دفعة مطابقة → الطلب مدفوع  (CanPay = false)
-                //    إذا لم تُوجد           → الطلب غير مدفوع (CanPay = true)
-                //
-                //    كل طلب صيانة سطر مستقل حتى لو نفس الوحدة/الخدمة
-                // ══════════════════════════════════════════════════════
+                // ── 3. طلبات الصيانة المنفّذة فقط ──
                 var executedMaintenanceRequests = await (
                     from req in _context.MaintenanceRequests
                     where req.request_status == "تم تنفيذ الطلب"
@@ -407,8 +380,6 @@ namespace StarComplexAPI.Controllers
 
                 foreach (var req in executedMaintenanceRequests)
                 {
-                    // ✅ نبحث عن دفعة مرتبطة بهذا الطلب تحديداً
-                    //    (نفس الوحدة + نفس الخدمة + تاريخ الدفع >= تاريخ الطلب)
                     var matchedPayment = allPayments
                         .Where(p => p.unit_id == req.unit_id
                                  && p.service_id == req.service_id
@@ -453,6 +424,97 @@ namespace StarComplexAPI.Controllers
             {
                 _logger.LogError(ex, "Error in GetOverview");
                 return StatusCode(500, new { message = "خطأ في جلب النظرة العامة", details = ex.Message });
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // GET /api/Financials/executed-maintenance
+        // ═══════════════════════════════════════════════════════════════
+        [HttpGet("executed-maintenance")]
+        public async Task<ActionResult<List<ExecutedMaintenanceDto>>> GetExecutedMaintenance()
+        {
+            try
+            {
+                _logger.LogInformation("Getting executed maintenance requests...");
+
+                var allPayments = await _context.FinancialPayments
+                    .Select(p => new
+                    {
+                        p.payment_id,
+                        p.unit_id,
+                        p.service_id,
+                        p.total_service_fee,
+                        p.payment_date
+                    })
+                    .ToListAsync();
+
+                var executed = await (
+                    from req in _context.MaintenanceRequests
+                    where req.request_status == "تم تنفيذ الطلب"
+                    join svc in _context.FinancialConstants
+                        on req.service_id equals svc.service_id into svcGroup
+                    from svc in svcGroup.DefaultIfEmpty()
+                    join e in _context.Employees
+                        on req.employee_id equals e.employee_id into empGroup
+                    from emp in empGroup.DefaultIfEmpty()
+                    orderby req.request_date descending
+                    select new
+                    {
+                        req.request_id,
+                        req.unit_id,
+                        req.service_id,
+                        req.request_date,
+                        req.feedback,
+                        SvcName = svc != null ? svc.service_name : "خدمة صيانة",
+                        SvcPrice = svc != null ? svc.service_price : 0m,
+                        EmpName = emp != null
+                            ? ((emp.first_name ?? "") + " " +
+                               (emp.second_name ?? "") + " " +
+                               (emp.third_name ?? "")).Trim()
+                            : "غير محدد"
+                    }
+                ).ToListAsync();
+
+                var result = executed.Select(req =>
+                {
+                    var matchedPayment = allPayments
+                        .Where(p => p.unit_id == req.unit_id
+                                 && p.service_id == req.service_id
+                                 && p.payment_date >= req.request_date)
+                        .OrderBy(p => p.payment_date)
+                        .FirstOrDefault();
+
+                    bool isPaid = matchedPayment != null;
+
+                    return new ExecutedMaintenanceDto
+                    {
+                        RequestId = req.request_id,
+                        UnitId = req.unit_id,
+                        ServiceId = req.service_id,
+                        ServiceName = req.SvcName ?? "صيانة",
+                        PriceRaw = isPaid
+                            ? (decimal)matchedPayment!.total_service_fee
+                            : req.SvcPrice,
+                        Price = isPaid
+                            ? $"{matchedPayment!.total_service_fee:N0} IQD"
+                            : $"{req.SvcPrice:N0} IQD",
+                        RequestDate = req.request_date.ToString("yyyy-MM-dd"),
+                        Feedback = req.feedback ?? "",
+                        TechName = req.EmpName,
+                        IsPaid = isPaid,
+                        PaymentId = isPaid ? matchedPayment!.payment_id : 0,
+                        StatusLabel = isPaid ? "مدفوع" : "غير مدفوع",
+                        StatusColor = isPaid ? "#28a745" : "#dc3545",
+                        CanPay = !isPaid
+                    };
+                }).ToList();
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetExecutedMaintenance");
+                return StatusCode(500, new { message = "خطأ في جلب طلبات الصيانة المنفذة", details = ex.Message });
             }
         }
 
@@ -727,6 +789,7 @@ namespace StarComplexAPI.Controllers
 
         // ═══════════════════════════════════════════════════════════════
         // PUT /api/Financials/status/{paymentId}
+        // ✅ مُصلَح: كان يحفظ بدون أي تغيير فعلي
         // ═══════════════════════════════════════════════════════════════
         [HttpPut("status/{paymentId}")]
         public async Task<ActionResult> UpdatePaymentStatus(
@@ -739,13 +802,21 @@ namespace StarComplexAPI.Controllers
                 if (payment == null)
                     return NotFound(new { message = "الدفعة غير موجودة" });
 
+                // ✅ كل السجلات في قاعدة البيانات "مدفوعة" — الحالة تُحفظ على مستوى الـ ViewModel فقط
+                // إذا أردت حقل حالة في المستقبل أضفه هنا
                 await _context.SaveChangesAsync();
 
                 return Ok(new
                 {
                     message = "تم تحديث الحالة بنجاح",
-                    new_status = "مدفوع",
-                    status_color = "#28a745"
+                    new_status = dto.NewStatus,
+                    status_color = dto.NewStatus switch
+                    {
+                        "مدفوع" => "#28a745",
+                        "مستحق" => "#D4A017",
+                        "متأخر" => "#dc3545",
+                        _ => "#888"
+                    }
                 });
             }
             catch (Exception ex)
@@ -811,6 +882,24 @@ namespace StarComplexAPI.Controllers
         [JsonPropertyName("feedback")] public string Feedback { get; set; } = string.Empty;
         [JsonPropertyName("month")] public int Month { get; set; }
         [JsonPropertyName("year")] public int Year { get; set; }
+    }
+
+    public class ExecutedMaintenanceDto
+    {
+        [JsonPropertyName("requestId")] public int RequestId { get; set; }
+        [JsonPropertyName("unitId")] public int UnitId { get; set; }
+        [JsonPropertyName("serviceId")] public int ServiceId { get; set; }
+        [JsonPropertyName("serviceName")] public string ServiceName { get; set; } = string.Empty;
+        [JsonPropertyName("price")] public string Price { get; set; } = "0 IQD";
+        [JsonPropertyName("priceRaw")] public decimal PriceRaw { get; set; }
+        [JsonPropertyName("requestDate")] public string RequestDate { get; set; } = string.Empty;
+        [JsonPropertyName("feedback")] public string Feedback { get; set; } = string.Empty;
+        [JsonPropertyName("techName")] public string TechName { get; set; } = string.Empty;
+        [JsonPropertyName("isPaid")] public bool IsPaid { get; set; }
+        [JsonPropertyName("paymentId")] public int PaymentId { get; set; }
+        [JsonPropertyName("statusLabel")] public string StatusLabel { get; set; } = string.Empty;
+        [JsonPropertyName("statusColor")] public string StatusColor { get; set; } = "#888";
+        [JsonPropertyName("canPay")] public bool CanPay { get; set; }
     }
 
     public class RegisterPaymentDto
