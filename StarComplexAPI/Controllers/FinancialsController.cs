@@ -218,7 +218,6 @@ namespace StarComplexAPI.Controllers
                     })
                     .ToList();
 
-                // فلتر الحالة يُطبَّق بعد البناء لأن كل السجلات "مدفوع" حالياً
                 if (!string.IsNullOrWhiteSpace(status))
                     result = result.Where(r => r.Status == status).ToList();
 
@@ -437,26 +436,34 @@ namespace StarComplexAPI.Controllers
             {
                 _logger.LogInformation("Getting executed maintenance requests...");
 
-                var allPayments = await _context.FinancialPayments
-                    .Select(p => new
+                // ✅ allPayments يجلب بيانات الموظف من جدول الدفعات
+                var allPayments = await (
+                    from p in _context.FinancialPayments
+                    join e in _context.Employees
+                        on p.employee_id equals e.employee_id into empGroup
+                    from emp in empGroup.DefaultIfEmpty()
+                    select new
                     {
                         p.payment_id,
                         p.unit_id,
                         p.service_id,
                         p.total_service_fee,
-                        p.payment_date
-                    })
-                    .ToListAsync();
+                        p.payment_date,
+                        EmployeeName = emp != null
+                            ? ((emp.first_name ?? "") + " " +
+                               (emp.second_name ?? "") + " " +
+                               (emp.third_name ?? "")).Trim()
+                            : "غير محدد"
+                    }
+                ).ToListAsync();
 
+                // ✅ بدون join على employee_id لأن MaintenanceRequest لا يحتوي على هذا الحقل
                 var executed = await (
                     from req in _context.MaintenanceRequests
                     where req.request_status == "تم تنفيذ الطلب"
                     join svc in _context.FinancialConstants
                         on req.service_id equals svc.service_id into svcGroup
                     from svc in svcGroup.DefaultIfEmpty()
-                    join e in _context.Employees
-                        on req.employee_id equals e.employee_id into empGroup
-                    from emp in empGroup.DefaultIfEmpty()
                     orderby req.request_date descending
                     select new
                     {
@@ -466,12 +473,7 @@ namespace StarComplexAPI.Controllers
                         req.request_date,
                         req.feedback,
                         SvcName = svc != null ? svc.service_name : "خدمة صيانة",
-                        SvcPrice = svc != null ? svc.service_price : 0m,
-                        EmpName = emp != null
-                            ? ((emp.first_name ?? "") + " " +
-                               (emp.second_name ?? "") + " " +
-                               (emp.third_name ?? "")).Trim()
-                            : "غير محدد"
+                        SvcPrice = svc != null ? svc.service_price : 0m
                     }
                 ).ToListAsync();
 
@@ -492,15 +494,13 @@ namespace StarComplexAPI.Controllers
                         UnitId = req.unit_id,
                         ServiceId = req.service_id,
                         ServiceName = req.SvcName ?? "صيانة",
-                        PriceRaw = isPaid
-                            ? (decimal)matchedPayment!.total_service_fee
-                            : req.SvcPrice,
+                        PriceRaw = isPaid ? (decimal)matchedPayment!.total_service_fee : req.SvcPrice,
                         Price = isPaid
                             ? $"{matchedPayment!.total_service_fee:N0} IQD"
                             : $"{req.SvcPrice:N0} IQD",
                         RequestDate = req.request_date.ToString("yyyy-MM-dd"),
                         Feedback = req.feedback ?? "",
-                        TechName = req.EmpName,
+                        TechName = isPaid ? matchedPayment!.EmployeeName : "—",  // ✅ من الدفعة
                         IsPaid = isPaid,
                         PaymentId = isPaid ? matchedPayment!.payment_id : 0,
                         StatusLabel = isPaid ? "مدفوع" : "غير مدفوع",
@@ -789,7 +789,6 @@ namespace StarComplexAPI.Controllers
 
         // ═══════════════════════════════════════════════════════════════
         // PUT /api/Financials/status/{paymentId}
-        // ✅ مُصلَح: كان يحفظ بدون أي تغيير فعلي
         // ═══════════════════════════════════════════════════════════════
         [HttpPut("status/{paymentId}")]
         public async Task<ActionResult> UpdatePaymentStatus(
@@ -802,8 +801,6 @@ namespace StarComplexAPI.Controllers
                 if (payment == null)
                     return NotFound(new { message = "الدفعة غير موجودة" });
 
-                // ✅ كل السجلات في قاعدة البيانات "مدفوعة" — الحالة تُحفظ على مستوى الـ ViewModel فقط
-                // إذا أردت حقل حالة في المستقبل أضفه هنا
                 await _context.SaveChangesAsync();
 
                 return Ok(new
