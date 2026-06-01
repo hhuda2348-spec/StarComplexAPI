@@ -64,8 +64,8 @@ namespace StarComplexAPI.Controllers
     }
 
     // ──────────────────────────────────────────────────────────
-    //  DTO سجل مالي واحد ضمن الأرشيف
-    //  يعتمد على: FinancialPayment + FinancialConstant
+    //  سجل مالي — خاص بموظف اداري
+    //  المصدر: financial_payments + financial_constants
     // ──────────────────────────────────────────────────────────
     public class ArchivedFinancialRecordDto
     {
@@ -79,8 +79,24 @@ namespace StarComplexAPI.Controllers
     }
 
     // ──────────────────────────────────────────────────────────
-    //  DTO موظف مؤرشف
-    //  يعتمد على: EmployeeArchive + FinancialPayment + FinancialConstant
+    //  سجل أمني — خاص بموظف امن
+    //  المصدر: security_logs
+    // ──────────────────────────────────────────────────────────
+    public class ArchivedSecurityLogDto
+    {
+        public int LogId { get; set; }
+        public string ActionType { get; set; } = string.Empty;
+        public string ActionResult { get; set; } = string.Empty;
+        public string? Notes { get; set; }
+        public string? VisitorSnapshot { get; set; }
+        public int? UnitIdSnapshot { get; set; }
+        public string CreatedAt { get; set; } = string.Empty;
+    }
+
+    // ──────────────────────────────────────────────────────────
+    //  موظف مؤرشف — يحمل سجلاته حسب نوعه
+    //  اداري  → FinancialRecords مملوء  / SecurityLogs فارغ
+    //  امن    → SecurityLogs مملوء     / FinancialRecords فارغ
     // ──────────────────────────────────────────────────────────
     public class ArchivedEmployeeDto
     {
@@ -92,9 +108,16 @@ namespace StarComplexAPI.Controllers
         public string? ThirdName { get; set; }
         public string? JobTitle { get; set; }
         public string? PhoneNumber { get; set; }
+        public string? EmployeeType { get; set; }
         public DateTime ArchivedAt { get; set; }
+
+        // اداري
         public int FinancialRecordsCount { get; set; }
         public List<ArchivedFinancialRecordDto> FinancialRecords { get; set; } = new();
+
+        // امن
+        public int SecurityLogsCount { get; set; }
+        public List<ArchivedSecurityLogDto> SecurityLogs { get; set; } = new();
     }
 
     public class AddBlacklistRequest
@@ -344,18 +367,14 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  حذف موظف مع الأرشفة
+        //  حذف موظف مع الأرشفة — يتحقق من employee_type
+        //
+        //  اداري → يجلب سجلاته من financial_payments
+        //  امن   → يجلب سجلاته من security_logs
         //
         //  لا يوجد FK Constraint بين financial_payments.employee_id
-        //  وجدول employees — لذا:
-        //    ✅ نحذف الموظف مباشرة بعد أرشفته
-        //    ✅ employee_id يبقى كما هو في financial_payments
-        //    ✅ نقدر لاحقاً نجيب سجلاته عبر employees_archive.employee_id
-        //
-        //  الخطوات:
-        //    1) أرشفة الموظف في employees_archive
-        //    2) فك ارتباط blacklist فقط (لأنه قد يكون فيه constraint)
-        //    3) حذف الموظف — financial_payments تبقى بـ employee_id أصلي
+        //  وجدول employees — لذا employee_id يبقى محفوظاً بعد الحذف
+        //  ونقدر نجيبه لاحقاً عند عرض الأرشيف
         // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id:int}")]
         public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
@@ -370,9 +389,12 @@ namespace StarComplexAPI.Controllers
             if (emp == null)
                 return NotFound(new { message = "الموظف غير موجود" });
 
-            // جلب عدد سجلاته المالية قبل الحذف للـ response
-            var financialCount = await _db.FinancialPayments
-                .CountAsync(p => p.employee_id == id);
+            var isAdmin = emp.employee_type == "اداري";
+            var isSecurity = emp.employee_type == "امن";
+
+            // عدد السجلات المرتبطة قبل الحذف
+            var financialCount = isAdmin ? await _db.FinancialPayments.CountAsync(p => p.employee_id == id) : 0;
+            var securityCount = isSecurity ? await _db.SecurityLogs.CountAsync(s => s.employee_id == id) : 0;
 
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
@@ -382,8 +404,7 @@ namespace StarComplexAPI.Controllers
                     INSERT INTO employees_archive
                         (employee_id, first_name, second_name, third_name,
                          job_title, phone_number, archived_at)
-                    VALUES
-                        ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
+                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
                     emp.employee_id,
                     (object?)emp.first_name ?? DBNull.Value,
                     (object?)emp.second_name ?? DBNull.Value,
@@ -392,20 +413,19 @@ namespace StarComplexAPI.Controllers
                     (object?)emp.phone_number ?? DBNull.Value,
                     DateTime.Now);
 
-                // جلب الـ archive_id المُنشأ
                 var archiveId = await _db.EmployeesArchive
                     .Where(a => a.employee_id == id)
                     .OrderByDescending(a => a.archive_id)
                     .Select(a => a.archive_id)
                     .FirstOrDefaultAsync();
 
-                // ── الخطوة 2: فك ارتباط blacklist فقط ───────────────
-                // financial_payments لا تحتاج SET NULL (لا يوجد FK)
-                // employee_id يبقى كما هو — يُستخدم لاحقاً في الأرشيف
+                // ── الخطوة 2: فك ارتباط blacklist ────────────────────
                 await _db.Database.ExecuteSqlRawAsync(
                     "UPDATE blacklist SET employee_id = 0 WHERE employee_id = {0}", id);
 
                 // ── الخطوة 3: حذف الموظف ─────────────────────────────
+                // financial_payments و security_logs تبقى كما هي
+                // employee_id محفوظ فيها — يُستخدم لاحقاً في الأرشيف
                 var rowsDeleted = await _db.Database.ExecuteSqlRawAsync(
                     "DELETE FROM employees WHERE employee_id = {0}", id);
 
@@ -419,10 +439,12 @@ namespace StarComplexAPI.Controllers
                     message = "تم حذف الموظف وأرشفة بياناته بنجاح",
                     archive_id = archiveId,
                     employee_id = emp.employee_id,
+                    employee_type = emp.employee_type,
                     full_name = string.Join(" ",
                         new[] { emp.first_name, emp.second_name, emp.third_name }
                             .Where(n => !string.IsNullOrWhiteSpace(n))),
-                    financial_records_kept = financialCount
+                    financial_records_kept = financialCount,
+                    security_logs_kept = securityCount
                 });
             }
             catch (Exception ex)
@@ -435,13 +457,10 @@ namespace StarComplexAPI.Controllers
 
         // ══════════════════════════════════════════════════════════
         //  الأرشيف — يعتمد على:
-        //    - EmployeeArchive   (employees_archive)
-        //    - FinancialPayment  (financial_payments)  ← employee_id محفوظ
-        //    - FinancialConstant (financial_constants) ← لجلب اسم الخدمة
-        //
-        //  الرابط: employees_archive.employee_id = financial_payments.employee_id
-        //  هذا يشتغل لأنه لا يوجد FK Constraint — الـ employee_id بقي
-        //  في financial_payments بعد الحذف ولم يُمسح
+        //    EmployeeArchive   → بيانات الموظف المؤرشف + employee_type
+        //    FinancialPayment  → سجلات الاداري  (employee_id محفوظ)
+        //    SecurityLog       → سجلات الامن    (employee_id محفوظ)
+        //    FinancialConstant → أسماء الخدمات للاداري
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
@@ -454,44 +473,75 @@ namespace StarComplexAPI.Controllers
             if (archived.Count == 0)
                 return Ok(new List<ArchivedEmployeeDto>());
 
-            // خريطة الخدمات من financial_constants
             var serviceMap = await _db.FinancialConstants
                 .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
-            // جلب كل employee_ids من الأرشيف
-            var archivedEmployeeIds = archived
-                .Select(a => a.employee_id)
-                .Distinct()
-                .ToList();
+            var archivedIds = archived.Select(a => a.employee_id).Distinct().ToList();
 
-            // جلب كل المدفوعات المرتبطة بهؤلاء الموظفين دفعة واحدة
-            // الرابط: financial_payments.employee_id = employees_archive.employee_id
+            // جلب كل المدفوعات لكل الموظفين المؤرشفين (اداري) دفعة واحدة
             var allPayments = await _db.FinancialPayments
                 .AsNoTracking()
-                .Where(p => p.employee_id != null && archivedEmployeeIds.Contains((int)p.employee_id))
+                .Where(p => p.employee_id != null && archivedIds.Contains((int)p.employee_id))
                 .OrderByDescending(p => p.payment_date)
                 .ToListAsync();
 
-            // تجميع المدفوعات بحسب employee_id
-            var paymentsByEmployee = allPayments
-                .GroupBy(p => (int)p.employee_id!)
-                .ToDictionary(g => g.Key, g => g.ToList());
+            // جلب كل سجلات الأمن لكل الموظفين المؤرشفين (امن) دفعة واحدة
+            var allSecurityLogs = await _db.SecurityLogs
+                .AsNoTracking()
+                .Where(s => archivedIds.Contains(s.employee_id))
+                .OrderByDescending(s => s.created_at)
+                .ToListAsync();
+
+            // تجميع بحسب employee_id
+            var paymentsByEmp = allPayments.GroupBy(p => (int)p.employee_id!)
+                                               .ToDictionary(g => g.Key, g => g.ToList());
+            var securityByEmp = allSecurityLogs.GroupBy(s => s.employee_id)
+                                                   .ToDictionary(g => g.Key, g => g.ToList());
 
             var result = archived.Select(a =>
             {
-                var payments = paymentsByEmployee.GetValueOrDefault(a.employee_id, new());
+                var isAdmin = a.job_title != null
+                    ? false  // job_title وحده لا يكفي — نرجع للـ employee_type المخزون
+                    : false;
+
+                // ملاحظة: employees_archive لا يخزن employee_type مباشرة
+                // لذا نستدل منه: إذا عنده سجلات مالية → اداري / سجلات أمن → امن
+                var payments = paymentsByEmp.GetValueOrDefault(a.employee_id, new());
+                var securityLogs = securityByEmp.GetValueOrDefault(a.employee_id, new());
+
+                // تحديد النوع بناءً على السجلات الموجودة
+                string empType;
+                if (payments.Count > 0 && securityLogs.Count == 0)
+                    empType = "اداري";
+                else if (securityLogs.Count > 0 && payments.Count == 0)
+                    empType = "امن";
+                else if (payments.Count > 0 && securityLogs.Count > 0)
+                    empType = "اداري";  // حالة نادرة — نعامله كاداري
+                else
+                    empType = "غير محدد";
 
                 var financialRecords = payments.Select(p => new ArchivedFinancialRecordDto
                 {
                     PaymentId = p.payment_id,
                     UnitId = p.unit_id,
                     ServiceName = p.service_id.HasValue
-                                        ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
+                                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
                     TotalFeeRaw = p.total_service_fee ?? 0m,
                     TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                     PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
                     PaymentMethod = p.payment_method ?? string.Empty
+                }).ToList();
+
+                var securityDtos = securityLogs.Select(s => new ArchivedSecurityLogDto
+                {
+                    LogId = s.log_id,
+                    ActionType = s.action_type,
+                    ActionResult = s.action_result,
+                    Notes = s.notes,
+                    VisitorSnapshot = s.visitor_snapshot,
+                    UnitIdSnapshot = s.unit_id_snapshot,
+                    CreatedAt = s.created_at.ToString("yyyy/MM/dd HH:mm")
                 }).ToList();
 
                 return new ArchivedEmployeeDto
@@ -506,9 +556,12 @@ namespace StarComplexAPI.Controllers
                     ThirdName = a.third_name,
                     JobTitle = a.job_title,
                     PhoneNumber = a.phone_number,
+                    EmployeeType = empType,
                     ArchivedAt = a.archived_at,
                     FinancialRecordsCount = financialRecords.Count,
-                    FinancialRecords = financialRecords
+                    FinancialRecords = financialRecords,
+                    SecurityLogsCount = securityDtos.Count,
+                    SecurityLogs = securityDtos
                 };
             }).ToList();
 
@@ -529,23 +582,50 @@ namespace StarComplexAPI.Controllers
                 .AsNoTracking()
                 .ToDictionaryAsync(s => s.service_id, s => s.service_name);
 
-            // جلب سجلات هذا الموظف تحديداً عبر employee_id
+            // جلب كلا النوعين — نحدد النوع بناءً على ما يُرجع
             var payments = await _db.FinancialPayments
                 .AsNoTracking()
                 .Where(p => p.employee_id == a.employee_id)
                 .OrderByDescending(p => p.payment_date)
                 .ToListAsync();
 
+            var securityLogs = await _db.SecurityLogs
+                .AsNoTracking()
+                .Where(s => s.employee_id == a.employee_id)
+                .OrderByDescending(s => s.created_at)
+                .ToListAsync();
+
+            string empType;
+            if (payments.Count > 0 && securityLogs.Count == 0)
+                empType = "اداري";
+            else if (securityLogs.Count > 0 && payments.Count == 0)
+                empType = "امن";
+            else if (payments.Count > 0 && securityLogs.Count > 0)
+                empType = "اداري";
+            else
+                empType = "غير محدد";
+
             var financialRecords = payments.Select(p => new ArchivedFinancialRecordDto
             {
                 PaymentId = p.payment_id,
                 UnitId = p.unit_id,
                 ServiceName = p.service_id.HasValue
-                                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
+                                ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
                 TotalFeeRaw = p.total_service_fee ?? 0m,
                 TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
                 PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
                 PaymentMethod = p.payment_method ?? string.Empty
+            }).ToList();
+
+            var securityDtos = securityLogs.Select(s => new ArchivedSecurityLogDto
+            {
+                LogId = s.log_id,
+                ActionType = s.action_type,
+                ActionResult = s.action_result,
+                Notes = s.notes,
+                VisitorSnapshot = s.visitor_snapshot,
+                UnitIdSnapshot = s.unit_id_snapshot,
+                CreatedAt = s.created_at.ToString("yyyy/MM/dd HH:mm")
             }).ToList();
 
             return Ok(new ArchivedEmployeeDto
@@ -560,9 +640,12 @@ namespace StarComplexAPI.Controllers
                 ThirdName = a.third_name,
                 JobTitle = a.job_title,
                 PhoneNumber = a.phone_number,
+                EmployeeType = empType,
                 ArchivedAt = a.archived_at,
                 FinancialRecordsCount = financialRecords.Count,
-                FinancialRecords = financialRecords
+                FinancialRecords = financialRecords,
+                SecurityLogsCount = securityDtos.Count,
+                SecurityLogs = securityDtos
             });
         }
 
