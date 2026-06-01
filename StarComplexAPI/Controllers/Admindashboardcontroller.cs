@@ -1,837 +1,1090 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using StarComplexAPI.Data;
-using StarComplexAPI.Models;
+﻿using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Drawing;
+using System.Reflection;
+using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using train.Services;
 
-namespace StarComplexAPI.Controllers
+namespace train
 {
-    // ══════════════════════════════════════════════════════════
-    //  DTOs
-    // ══════════════════════════════════════════════════════════
-
-    public class DashboardKpiDto
-    {
-        public int TotalResidents { get; set; }
-        public string ResidentsSub { get; set; } = string.Empty;
-        public int OccupiedUnits { get; set; }
-        public int TotalUnits { get; set; }
-        public string OccupancyRate { get; set; } = string.Empty;
-        public int PendingVisits { get; set; }
-        public string VisitsSub { get; set; } = string.Empty;
-        public int OpenMaintenance { get; set; }
-        public string MaintenanceSub { get; set; } = string.Empty;
-        public decimal TotalRevenueRaw { get; set; }
-        public string TotalRevenue { get; set; } = string.Empty;
-        public decimal MonthlyRevenueRaw { get; set; }
-        public string MonthlyRevenue { get; set; } = string.Empty;
-        public string CurrentMonthLabel { get; set; } = string.Empty;
-        public string TopService { get; set; } = string.Empty;
-        public string TopServiceCount { get; set; } = string.Empty;
-        public string RecentPaymentsSub { get; set; } = string.Empty;
-        public string PaymentsCountLabel { get; set; } = string.Empty;
-        public string EmployeeName { get; set; } = string.Empty;
-        public string EmployeeTitle { get; set; } = string.Empty;
-    }
-
-    public class DashboardPaymentItemDto
-    {
-        public string PaymentId { get; set; } = string.Empty;
-        public string UnitId { get; set; } = string.Empty;
-        public string ServiceName { get; set; } = string.Empty;
-        public decimal TotalFeeRaw { get; set; }
-        public string TotalFee { get; set; } = string.Empty;
-        public DateTime PaymentDateRaw { get; set; }
-        public string PaymentDate { get; set; } = string.Empty;
-        public string PaymentMethod { get; set; } = string.Empty;
-    }
-
-    public class DashboardMaintenanceItemDto
-    {
-        public string RequestId { get; set; } = string.Empty;
-        public string UnitId { get; set; } = string.Empty;
-        public string ServiceName { get; set; } = string.Empty;
-        public DateTime RequestDateRaw { get; set; }
-        public string RequestDate { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
-        public string StatusColor { get; set; } = string.Empty;
-    }
-
-    public class DashboardResponseDto
-    {
-        public DashboardKpiDto Kpi { get; set; } = new();
-        public List<DashboardPaymentItemDto> RecentPayments { get; set; } = new();
-        public List<DashboardMaintenanceItemDto> RecentMaintenance { get; set; } = new();
-    }
-
-    // ──────────────────────────────────────────────────────────
-    //  سجل مالي — خاص بموظف اداري
-    //  المصدر: financial_payments + financial_constants
-    // ──────────────────────────────────────────────────────────
-    public class ArchivedFinancialRecordDto
-    {
-        public int PaymentId { get; set; }
-        public int UnitId { get; set; }
-        public string ServiceName { get; set; } = string.Empty;
-        public decimal TotalFeeRaw { get; set; }
-        public string TotalFee { get; set; } = string.Empty;
-        public string PaymentDate { get; set; } = string.Empty;
-        public string PaymentMethod { get; set; } = string.Empty;
-    }
-
-    // ──────────────────────────────────────────────────────────
-    //  سجل أمني — خاص بموظف امن
-    //  المصدر: security_logs
-    // ──────────────────────────────────────────────────────────
-    public class ArchivedSecurityLogDto
-    {
-        public int LogId { get; set; }
-        public string ActionType { get; set; } = string.Empty;
-        public string ActionResult { get; set; } = string.Empty;
-        public string? Notes { get; set; }
-        public string? VisitorSnapshot { get; set; }
-        public int? UnitIdSnapshot { get; set; }
-        public string CreatedAt { get; set; } = string.Empty;
-    }
-
-    // ──────────────────────────────────────────────────────────
-    //  موظف مؤرشف — يحمل سجلاته حسب نوعه
-    //  اداري  → FinancialRecords مملوء  / SecurityLogs فارغ
-    //  امن    → SecurityLogs مملوء     / FinancialRecords فارغ
-    // ──────────────────────────────────────────────────────────
-    public class ArchivedEmployeeDto
+    // ══════════════════════════════════════════════════════════════
+    //  نموذج العرض — الموظف المؤرشف
+    // ══════════════════════════════════════════════════════════════
+    public class ArchivedEmployeeItemView
     {
         public int ArchiveId { get; set; }
         public int EmployeeId { get; set; }
-        public string? FullName { get; set; }
-        public string? FirstName { get; set; }
-        public string? SecondName { get; set; }
-        public string? ThirdName { get; set; }
-        public string? JobTitle { get; set; }
-        public string? PhoneNumber { get; set; }
-        public string? EmployeeType { get; set; }
-        public DateTime ArchivedAt { get; set; }
-
-        // اداري
+        public string FullName { get; set; } = string.Empty;
+        public string JobTitle { get; set; } = string.Empty;
+        public string PhoneNumber { get; set; } = string.Empty;
+        public string ArchivedAt { get; set; } = string.Empty;
         public int FinancialRecordsCount { get; set; }
         public List<ArchivedFinancialRecordDto> FinancialRecords { get; set; } = new();
-
-        // امن
-        public int SecurityLogsCount { get; set; }
-        public List<ArchivedSecurityLogDto> SecurityLogs { get; set; } = new();
+        public string FinancialCountLabel => FinancialRecordsCount > 0
+            ? $"💰 {FinancialRecordsCount} سجل مالي"
+            : "لا توجد سجلات";
+        public bool HasFinancialRecords => FinancialRecordsCount > 0;
     }
 
-    public class AddBlacklistRequest
+    // ══════════════════════════════════════════════════════════════
+    //  ViewModel
+    // ══════════════════════════════════════════════════════════════
+    public class DashboardViewModel : INotifyPropertyChanged
     {
-        public string PersonName { get; set; } = string.Empty;
-        public int EmployeeId { get; set; }
-        public string? Reason { get; set; }
-    }
+        private bool _isLoading;
+        private bool _isLoadingLists;
+        private bool _hasError;
+        private string _errorMessage = string.Empty;
+        private string _employeeName = string.Empty;
+        private string _employeeTitle = string.Empty;
+        private string _totalResidents = "—";
+        private string _residentsSub = string.Empty;
+        private string _occupiedUnits = "—";
+        private string _occupancyRate = string.Empty;
+        private string _pendingVisits = "—";
+        private string _visitsSub = string.Empty;
+        private string _openMaintenance = "—";
+        private string _maintenanceSub = string.Empty;
+        private string _totalRevenue = "—";
+        private string _monthlyRevenue = "—";
+        private string _currentMonthLabel = string.Empty;
+        private string _topService = "—";
+        private string _topServiceCount = string.Empty;
+        private string _employeeCountLabel = "جارٍ التحميل...";
+        private string _blacklistCountLabel = "جارٍ التحميل...";
+        private string _archiveCountLabel = "جارٍ التحميل...";
+        private string _searchText = string.Empty;
 
-    public class AddEmployeeRequest
-    {
-        public string EmployeeCode { get; set; } = string.Empty;
-        public string FirstName { get; set; } = string.Empty;
-        public string? SecondName { get; set; }
-        public string? ThirdName { get; set; }
-        public string? JobTitle { get; set; }
-        public string? PhoneNumber { get; set; }
-    }
-
-    public class AddResidentRequest
-    {
-        public int UnitId { get; set; }
-        public string FirstName { get; set; } = string.Empty;
-        public string? SecondName { get; set; }
-        public string? ThirdName { get; set; }
-        public string? PhoneNumber { get; set; }
-        public string? ResidentType { get; set; }
-        public int? FamilyMembersCount { get; set; }
-    }
-
-    public class ApproveVisitRequest
-    {
-        public int VisitId { get; set; }
-        public string NewStatus { get; set; } = "مقبولة";
-        public DateTime? ExpiryDate { get; set; }
-    }
-
-    public class CreateMaintenanceRequest
-    {
-        public int UnitId { get; set; }
-        public int ServiceId { get; set; }
-        public string? RequestStatus { get; set; } = "قيد الانتظار";
-        public string? Feedback { get; set; }
-    }
-
-    [ApiController]
-    [Route("api/[controller]")]
-    public class AdminDashboardController : ControllerBase
-    {
-        private readonly StarComplexContext _db;
-
-        private static readonly string[] ArabicMonths =
+        public bool IsLoading
         {
-            "يناير","فبراير","مارس","أبريل","مايو","يونيو",
-            "يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"
-        };
-
-        public AdminDashboardController(StarComplexContext db) => _db = db;
-
-        // ══════════════════════════════════════════════════════════
-        //  KPI
-        // ══════════════════════════════════════════════════════════
-        [HttpGet("kpi/{employeeId}")]
-        public async Task<ActionResult<DashboardResponseDto>> GetKpi(int employeeId)
-        {
-            var now = DateTime.Now;
-
-            var employee = await _db.Employees.FindAsync(employeeId);
-            var totalResidents = await _db.Residents.CountAsync();
-            var totalFamilyMembers = await _db.FamilyMembers.CountAsync();
-            var occupiedUnits = await _db.HousingUnits.CountAsync(u => u.unit_status == "مشغول");
-            var totalUnits = await _db.HousingUnits.CountAsync();
-            var pendingVisits = await _db.Visits.CountAsync(v => v.visit_status == "معلقة");
-            var todayVisits = await _db.Visits.CountAsync(v =>
-                v.visit_date.HasValue && v.visit_date.Value.Date == DateTime.Today);
-            var openMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد الانتظار");
-            var inProgressMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
-            var totalPaymentCount = await _db.FinancialPayments.CountAsync();
-
-            var allFees = await _db.FinancialPayments
-                .AsNoTracking()
-                .Select(p => p.total_service_fee)
-                .ToListAsync();
-            var totalRevenue = allFees.Sum(f => f ?? 0m);
-
-            var monthFees = await _db.FinancialPayments
-                .AsNoTracking()
-                .Where(p => p.payment_date.Year == now.Year && p.payment_date.Month == now.Month)
-                .Select(p => p.total_service_fee)
-                .ToListAsync();
-            var monthlyRevenue = monthFees.Sum(f => f ?? 0m);
-
-            var serviceMap = await _db.FinancialConstants
-                .AsNoTracking()
-                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-
-            var recentPayments = await _db.FinancialPayments
-                .AsNoTracking()
-                .OrderByDescending(p => p.payment_date)
-                .Take(10)
-                .ToListAsync();
-
-            var recentMaintenance = await _db.MaintenanceRequests
-                .AsNoTracking()
-                .OrderByDescending(m => m.request_date)
-                .Take(8)
-                .ToListAsync();
-
-            var topServiceData = await _db.FinancialPayments
-                .AsNoTracking()
-                .Where(p => p.service_id.HasValue)
-                .GroupBy(p => p.service_id!.Value)
-                .Select(g => new { Id = g.Key, Count = g.Count() })
-                .OrderByDescending(x => x.Count)
-                .FirstOrDefaultAsync();
-
-            var employeeName = employee is null ? "غير معروف"
-                : string.Join(" ", new[] { employee.first_name, employee.second_name, employee.third_name }
-                    .Where(n => !string.IsNullOrWhiteSpace(n)));
-
-            var occupancyPercentage = totalUnits > 0
-                ? (int)Math.Round((double)occupiedUnits / totalUnits * 100) : 0;
-
-            string topServiceName = "—", topServiceCount = "";
-            if (topServiceData != null)
-            {
-                topServiceName = serviceMap.GetValueOrDefault(topServiceData.Id, $"خدمة {topServiceData.Id}");
-                topServiceCount = $"{topServiceData.Count} طلب";
-            }
-
-            var paymentDtos = recentPayments.Select(p => new DashboardPaymentItemDto
-            {
-                PaymentId = $"#{p.payment_id}",
-                UnitId = p.unit_id.ToString(),
-                ServiceName = p.service_id.HasValue
-                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
-                TotalFeeRaw = p.total_service_fee ?? 0m,
-                TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
-                PaymentDateRaw = p.payment_date,
-                PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
-                PaymentMethod = p.payment_method ?? string.Empty
-            }).ToList();
-
-            var maintenanceDtos = recentMaintenance.Select(m => new DashboardMaintenanceItemDto
-            {
-                RequestId = $"#{m.request_id}",
-                UnitId = m.unit_id.ToString(),
-                ServiceName = serviceMap.GetValueOrDefault(m.service_id, "—"),
-                RequestDateRaw = m.request_date,
-                RequestDate = m.request_date.ToString("yyyy/MM/dd"),
-                Status = m.request_status ?? "غير محدد",
-                StatusColor = MapStatusColor(m.request_status)
-            }).ToList();
-
-            return Ok(new DashboardResponseDto
-            {
-                Kpi = new DashboardKpiDto
-                {
-                    TotalResidents = totalResidents,
-                    ResidentsSub = $"مع {totalFamilyMembers} فرد عائلة",
-                    OccupiedUnits = occupiedUnits,
-                    TotalUnits = totalUnits,
-                    OccupancyRate = $"نسبة الإشغال {occupancyPercentage}%",
-                    PendingVisits = pendingVisits,
-                    VisitsSub = $"{todayVisits} زيارة اليوم",
-                    OpenMaintenance = openMaintenance,
-                    MaintenanceSub = $"{inProgressMaintenance} قيد التنفيذ",
-                    TotalRevenueRaw = totalRevenue,
-                    TotalRevenue = totalRevenue.ToString("N0") + " د.ع",
-                    MonthlyRevenueRaw = monthlyRevenue,
-                    MonthlyRevenue = monthlyRevenue.ToString("N0") + " د.ع",
-                    CurrentMonthLabel = $"{ArabicMonths[now.Month - 1]} {now.Year}",
-                    TopService = topServiceName,
-                    TopServiceCount = topServiceCount,
-                    RecentPaymentsSub = $"آخر {paymentDtos.Count} دفعات",
-                    PaymentsCountLabel = $"الإجمالي: {totalPaymentCount}",
-                    EmployeeName = employeeName,
-                    EmployeeTitle = employee?.job_title ?? string.Empty
-                },
-                RecentPayments = paymentDtos,
-                RecentMaintenance = maintenanceDtos
-            });
+            get => _isLoading;
+            set { _isLoading = value; OnPropertyChanged(); }
         }
 
-        [HttpGet("full/{employeeId}")]
-        public Task<ActionResult<DashboardResponseDto>> GetFullDashboard(int employeeId)
-            => GetKpi(employeeId);
-
-        // ══════════════════════════════════════════════════════════
-        //  الموظفون
-        // ══════════════════════════════════════════════════════════
-        [HttpGet("employees")]
-        public async Task<ActionResult> GetEmployees()
+        public bool IsLoadingLists
         {
-            var list = await _db.Employees
-                .AsNoTracking()
-                .Select(e => new
-                {
-                    e.employee_id,
-                    e.employee_code,
-                    e.first_name,
-                    e.second_name,
-                    e.third_name,
-                    e.job_title,
-                    e.phone_number,
-                    e.employee_type,
-                    e.employee_index,
-                    full_name = (e.first_name + " " +
-                                (e.second_name ?? "") + " " +
-                                (e.third_name ?? "")).Trim()
-                }).ToListAsync();
-
-            return Ok(list);
+            get => _isLoadingLists;
+            set { _isLoadingLists = value; OnPropertyChanged(); }
         }
 
-        [HttpPost("employees")]
-        public async Task<ActionResult> AddEmployee([FromBody] AddEmployeeRequest req)
+        public bool HasError
         {
-            if (string.IsNullOrWhiteSpace(req.EmployeeCode) || string.IsNullOrWhiteSpace(req.FirstName))
-                return BadRequest(new { message = "رمز الموظف والاسم الأول مطلوبان" });
+            get => _hasError;
+            set { _hasError = value; OnPropertyChanged(); }
+        }
 
-            if (await _db.Employees.AnyAsync(e => e.employee_code == req.EmployeeCode))
-                return BadRequest(new { message = "رمز الموظف مستخدم مسبقاً" });
+        public string ErrorMessage
+        {
+            get => _errorMessage;
+            set { _errorMessage = value; OnPropertyChanged(); }
+        }
 
-            var emp = new Employee
-            {
-                employee_code = req.EmployeeCode.Trim(),
-                first_name = req.FirstName.Trim(),
-                second_name = NullIfEmpty(req.SecondName),
-                third_name = NullIfEmpty(req.ThirdName),
-                job_title = NullIfEmpty(req.JobTitle),
-                phone_number = NullIfEmpty(req.PhoneNumber)
-            };
+        public string EmployeeName
+        {
+            get => _employeeName;
+            set { _employeeName = value; OnPropertyChanged(); }
+        }
 
-            _db.Employees.Add(emp);
-            await _db.SaveChangesAsync();
+        public string EmployeeTitle
+        {
+            get => _employeeTitle;
+            set { _employeeTitle = value; OnPropertyChanged(); }
+        }
 
-            return Ok(new
-            {
-                message = "تمت إضافة الموظف بنجاح",
-                employee_id = emp.employee_id,
-                employee_code = emp.employee_code,
-                full_name = string.Join(" ",
-                    new[] { emp.first_name, emp.second_name, emp.third_name }
-                        .Where(n => !string.IsNullOrWhiteSpace(n)))
-            });
+        public string TotalResidents
+        {
+            get => _totalResidents;
+            set { _totalResidents = value; OnPropertyChanged(); }
+        }
+
+        public string ResidentsSub
+        {
+            get => _residentsSub;
+            set { _residentsSub = value; OnPropertyChanged(); }
+        }
+
+        public string OccupiedUnits
+        {
+            get => _occupiedUnits;
+            set { _occupiedUnits = value; OnPropertyChanged(); }
+        }
+
+        public string OccupancyRate
+        {
+            get => _occupancyRate;
+            set { _occupancyRate = value; OnPropertyChanged(); }
+        }
+
+        public string PendingVisits
+        {
+            get => _pendingVisits;
+            set { _pendingVisits = value; OnPropertyChanged(); }
+        }
+
+        public string VisitsSub
+        {
+            get => _visitsSub;
+            set { _visitsSub = value; OnPropertyChanged(); }
+        }
+
+        public string OpenMaintenance
+        {
+            get => _openMaintenance;
+            set { _openMaintenance = value; OnPropertyChanged(); }
+        }
+
+        public string MaintenanceSub
+        {
+            get => _maintenanceSub;
+            set { _maintenanceSub = value; OnPropertyChanged(); }
+        }
+
+        public string TotalRevenue
+        {
+            get => _totalRevenue;
+            set { _totalRevenue = value; OnPropertyChanged(); }
+        }
+
+        public string MonthlyRevenue
+        {
+            get => _monthlyRevenue;
+            set { _monthlyRevenue = value; OnPropertyChanged(); }
+        }
+
+        public string CurrentMonthLabel
+        {
+            get => _currentMonthLabel;
+            set { _currentMonthLabel = value; OnPropertyChanged(); }
+        }
+
+        public string TopService
+        {
+            get => _topService;
+            set { _topService = value; OnPropertyChanged(); }
+        }
+
+        public string TopServiceCount
+        {
+            get => _topServiceCount;
+            set { _topServiceCount = value; OnPropertyChanged(); }
+        }
+
+        public string EmployeeCountLabel
+        {
+            get => _employeeCountLabel;
+            set { _employeeCountLabel = value; OnPropertyChanged(); }
+        }
+
+        public string BlacklistCountLabel
+        {
+            get => _blacklistCountLabel;
+            set { _blacklistCountLabel = value; OnPropertyChanged(); }
+        }
+
+        public string ArchiveCountLabel
+        {
+            get => _archiveCountLabel;
+            set { _archiveCountLabel = value; OnPropertyChanged(); }
+        }
+
+        public string SearchText
+        {
+            get => _searchText;
+            set { _searchText = value; OnPropertyChanged(); }
+        }
+
+        public ObservableCollection<EmployeeItemView> EmployeeItems { get; set; } = new();
+        public ObservableCollection<BlacklistItemView> BlacklistItems { get; set; } = new();
+        public ObservableCollection<ArchivedEmployeeItemView> ArchivedEmployeeItems { get; set; } = new();
+
+        public ObservableCollection<EmployeeItemView> FilteredEmployeeItems { get; set; } = new();
+        public ObservableCollection<BlacklistItemView> FilteredBlacklistItems { get; set; } = new();
+        public ObservableCollection<ArchivedEmployeeItemView> FilteredArchivedItems { get; set; } = new();
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  AdminDashboardPage — Code-Behind
+    // ══════════════════════════════════════════════════════════════
+    public partial class AdminDashboardPage : ContentPage
+    {
+        private readonly DashboardService _service;
+        private readonly DashboardViewModel _vm = new();
+
+        private int _currentEmployeeId;
+        private bool _sidebarVisible;
+
+        private readonly Color _activeColor = Color.FromArgb("#A61D33");
+        private readonly Color _inactiveColor = Color.FromArgb("#8A8A8A");
+
+        private int _chartResidents;
+        private int _chartOccupied;
+        private int _chartPending;
+        private int _chartMaintenance;
+
+        private List<ServiceItemDto> _availableServices = new();
+        private List<UnitItemDto> _availableUnits = new();
+
+        public AdminDashboardPage(DashboardService service, int employeeId = 1)
+        {
+            InitializeComponent();
+            _service = service;
+            _currentEmployeeId = employeeId;
+            BindingContext = _vm;
+            UpdateTabUI("Dashboard");
+        }
+
+        protected override async void OnAppearing()
+        {
+            base.OnAppearing();
+            _currentEmployeeId = Preferences.Get("employee_id", _currentEmployeeId);
+            UpdateTabUI("Dashboard");
+            await LoadDashboardAsync();
         }
 
         // ══════════════════════════════════════════════════════════
-        //  حذف موظف مع الأرشفة — يتحقق من employee_type
-        //
-        //  اداري → يجلب سجلاته من financial_payments
-        //  امن   → يجلب سجلاته من security_logs
-        //
-        //  لا يوجد FK Constraint بين financial_payments.employee_id
-        //  وجدول employees — لذا employee_id يبقى محفوظاً بعد الحذف
-        //  ونقدر نجيبه لاحقاً عند عرض الأرشيف
+        //  تحميل البيانات — مقسّم لمرحلتين
         // ══════════════════════════════════════════════════════════
-        [HttpDelete("employees/{id:int}")]
-        public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
+        private async Task LoadDashboardAsync(bool isRetry = false)
         {
-            if (id == requestingEmployeeId)
-                return BadRequest(new { message = "لا يمكنك حذف حسابك الخاص" });
+            _vm.IsLoading = true;
+            _vm.HasError = false;
+            _vm.ErrorMessage = string.Empty;
 
-            var emp = await _db.Employees
-                .AsNoTracking()
-                .FirstOrDefaultAsync(e => e.employee_id == id);
-
-            if (emp == null)
-                return NotFound(new { message = "الموظف غير موجود" });
-
-            var isAdmin = emp.employee_type == "اداري";
-            var isSecurity = emp.employee_type == "امن";
-
-            // عدد السجلات المرتبطة قبل الحذف
-            var financialCount = isAdmin ? await _db.FinancialPayments.CountAsync(p => p.employee_id == id) : 0;
-            var securityCount = isSecurity ? await _db.SecurityLogs.CountAsync(s => s.employee_id == id) : 0;
-
-            using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                // ── الخطوة 1: أرشفة الموظف في employees_archive ──────
-                await _db.Database.ExecuteSqlRawAsync(@"
-                    INSERT INTO employees_archive
-                        (employee_id, first_name, second_name, third_name,
-                         job_title, phone_number, archived_at)
-                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
-                    emp.employee_id,
-                    (object?)emp.first_name ?? DBNull.Value,
-                    (object?)emp.second_name ?? DBNull.Value,
-                    (object?)emp.third_name ?? DBNull.Value,
-                    (object?)emp.job_title ?? DBNull.Value,
-                    (object?)emp.phone_number ?? DBNull.Value,
-                    DateTime.Now);
+                var (dashboard, services, units) =
+                    await _service.GetAllInitialDataAsync(_currentEmployeeId);
 
-                var archiveId = await _db.EmployeesArchive
-                    .Where(a => a.employee_id == id)
-                    .OrderByDescending(a => a.archive_id)
-                    .Select(a => a.archive_id)
-                    .FirstOrDefaultAsync();
+                _availableServices = services;
+                _availableUnits = units;
 
-                // ── الخطوة 2: فك ارتباط blacklist ────────────────────
-                await _db.Database.ExecuteSqlRawAsync(
-                    "UPDATE blacklist SET employee_id = 0 WHERE employee_id = {0}", id);
+                var kpi = dashboard.Kpi;
+                _vm.EmployeeName = kpi.EmployeeName;
+                _vm.EmployeeTitle = kpi.EmployeeTitle;
+                _vm.TotalResidents = kpi.TotalResidents.ToString("N0");
+                _vm.ResidentsSub = kpi.ResidentsSub;
+                _vm.OccupiedUnits = $"{kpi.OccupiedUnits} / {kpi.TotalUnits}";
+                _vm.OccupancyRate = kpi.OccupancyRate;
+                _vm.PendingVisits = kpi.PendingVisits.ToString();
+                _vm.VisitsSub = kpi.VisitsSub;
+                _vm.OpenMaintenance = kpi.OpenMaintenance.ToString();
+                _vm.MaintenanceSub = kpi.MaintenanceSub;
+                _vm.TotalRevenue = kpi.TotalRevenue;
+                _vm.MonthlyRevenue = kpi.MonthlyRevenue;
+                _vm.CurrentMonthLabel = kpi.CurrentMonthLabel;
+                _vm.TopService = kpi.TopService;
+                _vm.TopServiceCount = kpi.TopServiceCount;
 
-                // ── الخطوة 3: حذف الموظف ─────────────────────────────
-                // financial_payments و security_logs تبقى كما هي
-                // employee_id محفوظ فيها — يُستخدم لاحقاً في الأرشيف
-                var rowsDeleted = await _db.Database.ExecuteSqlRawAsync(
-                    "DELETE FROM employees WHERE employee_id = {0}", id);
+                _chartResidents = kpi.TotalResidents;
+                _chartOccupied = kpi.OccupiedUnits;
+                _chartPending = kpi.PendingVisits;
+                _chartMaintenance = kpi.OpenMaintenance;
 
-                if (rowsDeleted == 0)
-                    throw new Exception("فشل حذف الموظف — لم يُعثر عليه في قاعدة البيانات");
+                StatsChart.Drawable = new StatsChartDrawable(
+                    _chartResidents, _chartOccupied, _chartPending, _chartMaintenance);
+                StatsChart.Invalidate();
 
-                await transaction.CommitAsync();
+                _vm.IsLoading = false;
 
-                return Ok(new
+                _vm.IsLoadingLists = true;
+                _vm.EmployeeCountLabel = "جارٍ تحميل الموظفين...";
+                _vm.BlacklistCountLabel = "جارٍ تحميل القائمة...";
+                _vm.ArchiveCountLabel = "جارٍ تحميل الأرشيف...";
+
+                await Task.WhenAll(
+                    SafeLoad(LoadEmployeesAsync, "موظفي الأمن"),
+                    SafeLoad(LoadBlacklistAsync, "القائمة السوداء"),
+                    SafeLoad(LoadArchivedEmployeesAsync, "الأرشيف")
+                );
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _vm.HasError = true;
+                _vm.ErrorMessage = $"تعذّر الاتصال بالخادم.\n{httpEx.Message}";
+                System.Diagnostics.Debug.WriteLine($"❌ HTTP Error: {httpEx.Message}");
+
+                if (!isRetry)
                 {
-                    message = "تم حذف الموظف وأرشفة بياناته بنجاح",
-                    archive_id = archiveId,
-                    employee_id = emp.employee_id,
-                    employee_type = emp.employee_type,
-                    full_name = string.Join(" ",
-                        new[] { emp.first_name, emp.second_name, emp.third_name }
-                            .Where(n => !string.IsNullOrWhiteSpace(n))),
-                    financial_records_kept = financialCount,
-                    security_logs_kept = securityCount
-                });
+                    await Task.Delay(2000);
+                    await LoadDashboardAsync(isRetry: true);
+                    return;
+                }
+
+                await DisplayAlert("خطأ في الاتصال",
+                    "تعذّر الوصول إلى الخادم.\nتأكد من اتصالك بالإنترنت ثم اضغط إعادة المحاولة.",
+                    "حسناً");
+            }
+            catch (TaskCanceledException)
+            {
+                _vm.HasError = true;
+                _vm.ErrorMessage = "انتهت مهلة الاتصال. تحقق من الإنترنت.";
+                await DisplayAlert("انتهت المهلة",
+                    "استغرق الطلب وقتاً طويلاً. حاول مجدداً.", "حسناً");
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                System.Diagnostics.Debug.WriteLine($"❌ DeleteEmployee Error: {ex.Message}");
-                return StatusCode(500, new { message = $"فشل العملية: {ex.Message}" });
+                _vm.HasError = true;
+                _vm.ErrorMessage = ex.Message;
+                System.Diagnostics.Debug.WriteLine($"❌ Dashboard Error: {ex}");
+                await DisplayAlert("خطأ غير متوقع", ex.Message, "إغلاق");
+            }
+            finally
+            {
+                _vm.IsLoading = false;
+                _vm.IsLoadingLists = false;
+            }
+        }
+
+        private static async Task SafeLoad(Func<Task> loader, string sectionName)
+        {
+            try { await loader(); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"⚠️ فشل تحميل {sectionName}: {ex.Message}");
             }
         }
 
         // ══════════════════════════════════════════════════════════
-        //  الأرشيف — يعتمد على:
-        //    EmployeeArchive   → بيانات الموظف المؤرشف + employee_type
-        //    FinancialPayment  → سجلات الاداري  (employee_id محفوظ)
-        //    SecurityLog       → سجلات الامن    (employee_id محفوظ)
-        //    FinancialConstant → أسماء الخدمات للاداري
+        //  تحميل الموظفين
         // ══════════════════════════════════════════════════════════
-        [HttpGet("employees/archive")]
-        public async Task<ActionResult> GetArchivedEmployees()
+        private async Task LoadEmployeesAsync()
         {
-            var archived = await _db.EmployeesArchive
-                .AsNoTracking()
-                .OrderByDescending(a => a.archived_at)
-                .ToListAsync();
+            var list = await _service.GetEmployeesAsync();
 
-            if (archived.Count == 0)
-                return Ok(new List<ArchivedEmployeeDto>());
-
-            var serviceMap = await _db.FinancialConstants
-                .AsNoTracking()
-                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-
-            var archivedIds = archived.Select(a => a.employee_id).Distinct().ToList();
-
-            // جلب كل المدفوعات لكل الموظفين المؤرشفين (اداري) دفعة واحدة
-            var allPayments = await _db.FinancialPayments
-                .AsNoTracking()
-                .Where(p => p.employee_id != null && archivedIds.Contains((int)p.employee_id))
-                .OrderByDescending(p => p.payment_date)
-                .ToListAsync();
-
-            // جلب كل سجلات الأمن لكل الموظفين المؤرشفين (امن) دفعة واحدة
-            var allSecurityLogs = await _db.SecurityLogs
-                .AsNoTracking()
-                .Where(s => archivedIds.Contains(s.employee_id))
-                .OrderByDescending(s => s.created_at)
-                .ToListAsync();
-
-            // تجميع بحسب employee_id
-            var paymentsByEmp = allPayments.GroupBy(p => (int)p.employee_id!)
-                                               .ToDictionary(g => g.Key, g => g.ToList());
-            var securityByEmp = allSecurityLogs.GroupBy(s => s.employee_id)
-                                                   .ToDictionary(g => g.Key, g => g.ToList());
-
-            var result = archived.Select(a =>
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                var isAdmin = a.job_title != null
-                    ? false  // job_title وحده لا يكفي — نرجع للـ employee_type المخزون
-                    : false;
+                _vm.EmployeeItems.Clear();
+                _vm.FilteredEmployeeItems.Clear();
 
-                // ملاحظة: employees_archive لا يخزن employee_type مباشرة
-                // لذا نستدل منه: إذا عنده سجلات مالية → اداري / سجلات أمن → امن
-                var payments = paymentsByEmp.GetValueOrDefault(a.employee_id, new());
-                var securityLogs = securityByEmp.GetValueOrDefault(a.employee_id, new());
-
-                // تحديد النوع بناءً على السجلات الموجودة
-                string empType;
-                if (payments.Count > 0 && securityLogs.Count == 0)
-                    empType = "اداري";
-                else if (securityLogs.Count > 0 && payments.Count == 0)
-                    empType = "امن";
-                else if (payments.Count > 0 && securityLogs.Count > 0)
-                    empType = "اداري";  // حالة نادرة — نعامله كاداري
-                else
-                    empType = "غير محدد";
-
-                var financialRecords = payments.Select(p => new ArchivedFinancialRecordDto
+                foreach (var emp in list)
                 {
-                    PaymentId = p.payment_id,
-                    UnitId = p.unit_id,
-                    ServiceName = p.service_id.HasValue
-                                    ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
-                    TotalFeeRaw = p.total_service_fee ?? 0m,
-                    TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
-                    PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
-                    PaymentMethod = p.payment_method ?? string.Empty
-                }).ToList();
+                    var item = new EmployeeItemView
+                    {
+                        EmployeeId = emp.EmployeeId,
+                        EmployeeCode = emp.EmployeeCode ?? "—",
+                        FullName = emp.FullName?.Trim() ?? "—",
+                        JobTitle = emp.JobTitle ?? "—",
+                        PhoneNumber = emp.PhoneNumber ?? "—",
+                        IsCurrentUser = emp.EmployeeId == _currentEmployeeId
+                    };
+                    _vm.EmployeeItems.Add(item);
+                    _vm.FilteredEmployeeItems.Add(item);
+                }
 
-                var securityDtos = securityLogs.Select(s => new ArchivedSecurityLogDto
-                {
-                    LogId = s.log_id,
-                    ActionType = s.action_type,
-                    ActionResult = s.action_result,
-                    Notes = s.notes,
-                    VisitorSnapshot = s.visitor_snapshot,
-                    UnitIdSnapshot = s.unit_id_snapshot,
-                    CreatedAt = s.created_at.ToString("yyyy/MM/dd HH:mm")
-                }).ToList();
-
-                return new ArchivedEmployeeDto
-                {
-                    ArchiveId = a.archive_id,
-                    EmployeeId = a.employee_id,
-                    FullName = string.Join(" ",
-                        new[] { a.first_name, a.second_name, a.third_name }
-                            .Where(n => !string.IsNullOrWhiteSpace(n))),
-                    FirstName = a.first_name,
-                    SecondName = a.second_name,
-                    ThirdName = a.third_name,
-                    JobTitle = a.job_title,
-                    PhoneNumber = a.phone_number,
-                    EmployeeType = empType,
-                    ArchivedAt = a.archived_at,
-                    FinancialRecordsCount = financialRecords.Count,
-                    FinancialRecords = financialRecords,
-                    SecurityLogsCount = securityDtos.Count,
-                    SecurityLogs = securityDtos
-                };
-            }).ToList();
-
-            return Ok(result);
+                _vm.EmployeeCountLabel = $"إجمالي الموظفين: {_vm.EmployeeItems.Count}";
+            });
         }
 
-        [HttpGet("employees/archive/{archiveId:int}")]
-        public async Task<ActionResult> GetArchivedEmployee(int archiveId)
+        // ══════════════════════════════════════════════════════════
+        //  تحميل القائمة السوداء
+        // ══════════════════════════════════════════════════════════
+        private async Task LoadBlacklistAsync()
         {
-            var a = await _db.EmployeesArchive
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.archive_id == archiveId);
+            var list = await _service.GetBlacklistAsync();
 
-            if (a == null)
-                return NotFound(new { message = "السجل غير موجود في الأرشيف" });
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                _vm.BlacklistItems.Clear();
+                _vm.FilteredBlacklistItems.Clear();
 
-            var serviceMap = await _db.FinancialConstants
-                .AsNoTracking()
-                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
+                foreach (var item in list)
+                {
+                    var view = new BlacklistItemView
+                    {
+                        BlacklistId = item.BlacklistId,
+                        PersonName = item.PersonName ?? "—",
+                        EmployeeId = item.EmployeeId,
+                        AddedByName = item.AddedByName ?? "—",
+                        Reason = item.Reason ?? string.Empty,
+                        AddedDate = item.AddedDate
+                    };
+                    _vm.BlacklistItems.Add(view);
+                    _vm.FilteredBlacklistItems.Add(view);
+                }
 
-            // جلب كلا النوعين — نحدد النوع بناءً على ما يُرجع
-            var payments = await _db.FinancialPayments
-                .AsNoTracking()
-                .Where(p => p.employee_id == a.employee_id)
-                .OrderByDescending(p => p.payment_date)
-                .ToListAsync();
+                _vm.BlacklistCountLabel = $"إجمالي السجلات: {_vm.BlacklistItems.Count}";
+            });
+        }
 
-            var securityLogs = await _db.SecurityLogs
-                .AsNoTracking()
-                .Where(s => s.employee_id == a.employee_id)
-                .OrderByDescending(s => s.created_at)
-                .ToListAsync();
+        // ══════════════════════════════════════════════════════════
+        //  تحميل الأرشيف
+        // ══════════════════════════════════════════════════════════
+        private async Task LoadArchivedEmployeesAsync()
+        {
+            var list = await _service.GetArchivedEmployeesAsync();
 
-            string empType;
-            if (payments.Count > 0 && securityLogs.Count == 0)
-                empType = "اداري";
-            else if (securityLogs.Count > 0 && payments.Count == 0)
-                empType = "امن";
-            else if (payments.Count > 0 && securityLogs.Count > 0)
-                empType = "اداري";
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                _vm.ArchivedEmployeeItems.Clear();
+                _vm.FilteredArchivedItems.Clear();
+
+                foreach (var item in list)
+                {
+                    var view = new ArchivedEmployeeItemView
+                    {
+                        ArchiveId = item.ArchiveId,
+                        EmployeeId = item.EmployeeId,
+                        FullName = item.FullName?.Trim() ?? "—",
+                        JobTitle = item.JobTitle ?? "—",
+                        PhoneNumber = item.PhoneNumber ?? "—",
+                        ArchivedAt = item.ArchivedAt.ToString("yyyy/MM/dd"),
+                        FinancialRecordsCount = item.FinancialRecordsCount,
+                        FinancialRecords = item.FinancialRecords
+                    };
+                    _vm.ArchivedEmployeeItems.Add(view);
+                    _vm.FilteredArchivedItems.Add(view);
+                }
+
+                _vm.ArchiveCountLabel = $"إجمالي المؤرشفين: {_vm.ArchivedEmployeeItems.Count}";
+            });
+        }
+
+        // ══════════════════════════════════════════════════════════
+        //  البحث
+        // ══════════════════════════════════════════════════════════
+        private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
+            => ApplySearch((e.NewTextValue ?? string.Empty).Trim().ToLower());
+
+        private void ApplySearch(string query)
+        {
+            bool empty = string.IsNullOrEmpty(query);
+
+            var filteredEmps = empty
+                ? _vm.EmployeeItems
+                : (IEnumerable<EmployeeItemView>)_vm.EmployeeItems.Where(e =>
+                    (e.FullName?.ToLower().Contains(query) ?? false) ||
+                    (e.EmployeeCode?.ToLower().Contains(query) ?? false) ||
+                    (e.JobTitle?.ToLower().Contains(query) ?? false) ||
+                    (e.PhoneNumber?.ToLower().Contains(query) ?? false) ||
+                    e.EmployeeId.ToString().Contains(query));
+
+            _vm.FilteredEmployeeItems.Clear();
+            foreach (var i in filteredEmps) _vm.FilteredEmployeeItems.Add(i);
+
+            var filteredBlack = empty
+                ? _vm.BlacklistItems
+                : (IEnumerable<BlacklistItemView>)_vm.BlacklistItems.Where(b =>
+                    (b.PersonName?.ToLower().Contains(query) ?? false) ||
+                    (b.Reason?.ToLower().Contains(query) ?? false) ||
+                    (b.AddedByName?.ToLower().Contains(query) ?? false) ||
+                    b.AddedDate.ToString("yyyy/MM/dd").Contains(query));
+
+            _vm.FilteredBlacklistItems.Clear();
+            foreach (var i in filteredBlack) _vm.FilteredBlacklistItems.Add(i);
+
+            var filteredArchive = empty
+                ? _vm.ArchivedEmployeeItems
+                : (IEnumerable<ArchivedEmployeeItemView>)_vm.ArchivedEmployeeItems.Where(a =>
+                    (a.FullName?.ToLower().Contains(query) ?? false) ||
+                    (a.JobTitle?.ToLower().Contains(query) ?? false) ||
+                    (a.PhoneNumber?.ToLower().Contains(query) ?? false) ||
+                    a.ArchivedAt.Contains(query) ||
+                    a.EmployeeId.ToString().Contains(query));
+
+            _vm.FilteredArchivedItems.Clear();
+            foreach (var i in filteredArchive) _vm.FilteredArchivedItems.Add(i);
+
+            _vm.EmployeeCountLabel = empty
+                ? $"إجمالي الموظفين: {_vm.EmployeeItems.Count}"
+                : $"نتائج البحث: {_vm.FilteredEmployeeItems.Count} من {_vm.EmployeeItems.Count}";
+
+            _vm.BlacklistCountLabel = empty
+                ? $"إجمالي السجلات: {_vm.BlacklistItems.Count}"
+                : $"نتائج البحث: {_vm.FilteredBlacklistItems.Count} من {_vm.BlacklistItems.Count}";
+
+            _vm.ArchiveCountLabel = empty
+                ? $"إجمالي المؤرشفين: {_vm.ArchivedEmployeeItems.Count}"
+                : $"نتائج البحث: {_vm.FilteredArchivedItems.Count} من {_vm.ArchivedEmployeeItems.Count}";
+        }
+
+        private void OnClearSearchClicked(object sender, EventArgs e)
+        {
+            SearchEntry.Text = string.Empty;
+            ApplySearch(string.Empty);
+        }
+
+        private async void OnRetryClicked(object sender, EventArgs e)
+            => await LoadDashboardAsync();
+
+        // ══════════════════════════════════════════════════════════
+        //  Sidebar
+        // ══════════════════════════════════════════════════════════
+        private async void OnToggleSidebarClicked(object sender, EventArgs e)
+        {
+            _sidebarVisible = !_sidebarVisible;
+            if (_sidebarVisible)
+            {
+                SidebarBorder.IsVisible = true;
+                SidebarBorder.TranslationX = -220;
+                await SidebarBorder.TranslateTo(0, 0, 220, Easing.CubicOut);
+            }
             else
-                empType = "غير محدد";
-
-            var financialRecords = payments.Select(p => new ArchivedFinancialRecordDto
             {
-                PaymentId = p.payment_id,
-                UnitId = p.unit_id,
-                ServiceName = p.service_id.HasValue
-                                ? serviceMap.GetValueOrDefault(p.service_id.Value, "—") : "—",
-                TotalFeeRaw = p.total_service_fee ?? 0m,
-                TotalFee = (p.total_service_fee ?? 0m).ToString("N0") + " د.ع",
-                PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
-                PaymentMethod = p.payment_method ?? string.Empty
-            }).ToList();
+                await SidebarBorder.TranslateTo(-220, 0, 180, Easing.CubicIn);
+                SidebarBorder.IsVisible = false;
+            }
+        }
 
-            var securityDtos = securityLogs.Select(s => new ArchivedSecurityLogDto
-            {
-                LogId = s.log_id,
-                ActionType = s.action_type,
-                ActionResult = s.action_result,
-                Notes = s.notes,
-                VisitorSnapshot = s.visitor_snapshot,
-                UnitIdSnapshot = s.unit_id_snapshot,
-                CreatedAt = s.created_at.ToString("yyyy/MM/dd HH:mm")
-            }).ToList();
-
-            return Ok(new ArchivedEmployeeDto
-            {
-                ArchiveId = a.archive_id,
-                EmployeeId = a.employee_id,
-                FullName = string.Join(" ",
-                    new[] { a.first_name, a.second_name, a.third_name }
-                        .Where(n => !string.IsNullOrWhiteSpace(n))),
-                FirstName = a.first_name,
-                SecondName = a.second_name,
-                ThirdName = a.third_name,
-                JobTitle = a.job_title,
-                PhoneNumber = a.phone_number,
-                EmployeeType = empType,
-                ArchivedAt = a.archived_at,
-                FinancialRecordsCount = financialRecords.Count,
-                FinancialRecords = financialRecords,
-                SecurityLogsCount = securityDtos.Count,
-                SecurityLogs = securityDtos
-            });
+        private async void CloseSidebar()
+        {
+            if (!_sidebarVisible) return;
+            _sidebarVisible = false;
+            await SidebarBorder.TranslateTo(-220, 0, 180, Easing.CubicIn);
+            SidebarBorder.IsVisible = false;
         }
 
         // ══════════════════════════════════════════════════════════
-        //  القائمة السوداء
+        //  Bottom Tab Bar
         // ══════════════════════════════════════════════════════════
-        [HttpGet("blacklist")]
-        public async Task<ActionResult> GetBlacklist()
+        private void UpdateTabUI(string activeTab)
         {
-            var list = await _db.Blacklist.AsNoTracking().ToListAsync();
+            Label[] icons = { IconDashboard, IconResidents, IconVisits, IconFinancials, IconMaintenance };
+            Label[] texts = { TextDashboard, TextResidents, TextVisits, TextFinancials, TextMaintenance };
 
-            var empList = await _db.Employees
-                .AsNoTracking()
-                .Select(e => new
+            foreach (var (icon, text) in icons.Zip(texts))
+            {
+                icon.TextColor = text.TextColor = _inactiveColor;
+                text.FontAttributes = FontAttributes.None;
+            }
+
+            (Label icon, Label text) active = activeTab switch
+            {
+                "Residents" => (IconResidents, TextResidents),
+                "Visits" => (IconVisits, TextVisits),
+                "Financials" => (IconFinancials, TextFinancials),
+                "Maintenance" => (IconMaintenance, TextMaintenance),
+                _ => (IconDashboard, TextDashboard)
+            };
+            active.icon.TextColor = active.text.TextColor = _activeColor;
+            active.text.FontAttributes = FontAttributes.Bold;
+        }
+
+        // ══════════════════════════════════════════════════════════
+        //  Popup مخصص
+        // ══════════════════════════════════════════════════════════
+        private async Task<bool> ShowPopupAsync(View popupContent, double widthRequest = 420)
+        {
+            var popup = new Border
+            {
+                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle
+                { CornerRadius = new CornerRadius(18) },
+                StrokeThickness = 0,
+                BackgroundColor = Colors.White,
+                WidthRequest = widthRequest,
+                MaximumHeightRequest = 680,
+                Shadow = new Shadow
                 {
-                    e.employee_id,
-                    FullName = (e.first_name + " " +
-                               (e.second_name ?? "") + " " +
-                               (e.third_name ?? "")).Trim()
-                }).ToListAsync();
+                    Brush = new SolidColorBrush(Color.FromArgb("#000000")),
+                    Opacity = 0.18f,
+                    Radius = 24,
+                    Offset = new Point(0, 8)
+                },
+                Content = new ScrollView { Content = popupContent },
+                VerticalOptions = LayoutOptions.Center,
+                HorizontalOptions = LayoutOptions.Center,
+                Opacity = 0,
+                TranslationY = 30
+            };
 
-            var archList = await _db.EmployeesArchive
-                .AsNoTracking()
-                .Select(a => new
+            var overlay = new Grid
+            {
+                BackgroundColor = Color.FromArgb("#80000000"),
+                Children = { popup }
+            };
+
+            var originalContent = this.Content;
+            var rootGrid = new Grid();
+            rootGrid.Children.Add(originalContent);
+            rootGrid.Children.Add(overlay);
+            this.Content = rootGrid;
+
+            await Task.WhenAll(
+                popup.FadeTo(1, 220, Easing.CubicOut),
+                popup.TranslateTo(0, 0, 220, Easing.CubicOut)
+            );
+
+            var tcs = (TaskCompletionSource<bool>)popupContent.BindingContext!;
+            bool result = await tcs.Task;
+
+            await Task.WhenAll(
+                popup.FadeTo(0, 160, Easing.CubicIn),
+                popup.TranslateTo(0, 20, 160, Easing.CubicIn)
+            );
+
+            rootGrid.Children.Remove(originalContent);
+            this.Content = originalContent;
+            return result;
+        }
+
+        // ══════════════════════════════════════════════════════════
+        //  إضافة موظف
+        // ══════════════════════════════════════════════════════════
+        private async void OnAddEmployeeClicked(object sender, EventArgs e)
+        {
+            var entryCode = MakeEntry("مثال: EMP-001");
+            var entryFirst = MakeEntry("الاسم الأول *");
+            var entrySecond = MakeEntry("الاسم الثاني (اختياري)");
+            var entryThird = MakeEntry("الاسم الثالث (اختياري)");
+            var entryJob = MakeEntry("مثال: ضابط أمن");
+            var entryPhone = MakeEntry("مثال: 07xxxxxxxx", Keyboard.Telephone);
+
+            var tcs = new TaskCompletionSource<bool>();
+            var btnAdd = MakeButton("✅  إضافة الموظف", "#6B1520", Colors.White);
+            var btnCancel = MakeButton("إلغاء", "#EEEBE8", Color.FromArgb("#555555"));
+
+            btnAdd.Clicked += (_, _) => tcs.TrySetResult(true);
+            btnCancel.Clicked += (_, _) => tcs.TrySetResult(false);
+
+            var namesGrid = new Grid
+            {
+                ColumnDefinitions =
                 {
-                    a.employee_id,
-                    FullName = (a.first_name + " " +
-                               (a.second_name ?? "") + " " +
-                               (a.third_name ?? "")).Trim() + " (مؤرشف)"
-                }).ToListAsync();
-
-            var nameMap = new Dictionary<int, string>();
-            foreach (var arch in archList)
-                nameMap.TryAdd(arch.employee_id, arch.FullName);
-            foreach (var e in empList)
-                nameMap[e.employee_id] = e.FullName;
-
-            return Ok(list.Select(b => new
-            {
-                b.blacklist_id,
-                person_name = b.person_name ?? string.Empty,
-                b.employee_id,
-                added_by_name = nameMap.GetValueOrDefault(b.employee_id, "موظف غير معروف"),
-                b.added_date,
-                b.reason
-            }));
-        }
-
-        [HttpPost("blacklist")]
-        public async Task<ActionResult> AddToBlacklist([FromBody] AddBlacklistRequest req)
-        {
-            if (string.IsNullOrWhiteSpace(req.PersonName))
-                return BadRequest(new { message = "اسم الشخص مطلوب" });
-
-            if (!await _db.Employees.AnyAsync(e => e.employee_id == req.EmployeeId))
-                return BadRequest(new { message = "الموظف المسؤول غير موجود" });
-
-            var b = new Blacklist
-            {
-                person_name = req.PersonName.Trim(),
-                employee_id = req.EmployeeId,
-                reason = NullIfEmpty(req.Reason),
-                added_date = DateTime.Now
+                    new ColumnDefinition(GridLength.Star),
+                    new ColumnDefinition(GridLength.Star)
+                },
+                ColumnSpacing = 10,
+                Children =
+                {
+                    FieldRow("الاسم الثاني", entrySecond),
+                    SetCol(FieldRow("الاسم الثالث", entryThird), 1)
+                }
             };
 
-            _db.Blacklist.Add(b);
-            await _db.SaveChangesAsync();
-
-            return Ok(new
+            var btnsGrid = new Grid
             {
-                message = "تمت إضافة الشخص للقائمة السوداء بنجاح",
-                blacklist_id = b.blacklist_id
-            });
-        }
-
-        [HttpDelete("blacklist/{id}")]
-        public async Task<ActionResult> RemoveFromBlacklist(int id)
-        {
-            var b = await _db.Blacklist.FindAsync(id);
-            if (b == null) return NotFound(new { message = "السجل غير موجود" });
-
-            _db.Blacklist.Remove(b);
-            await _db.SaveChangesAsync();
-
-            return Ok(new { message = "تم حذف السجل من القائمة السوداء" });
-        }
-
-        // ══════════════════════════════════════════════════════════
-        //  السكان
-        // ══════════════════════════════════════════════════════════
-        [HttpPost("add-resident")]
-        public async Task<ActionResult> AddResident([FromBody] AddResidentRequest req)
-        {
-            var unit = await _db.HousingUnits.FindAsync(req.UnitId);
-            if (unit == null) return NotFound(new { message = "الوحدة غير موجودة" });
-
-            var res = new Resident
-            {
-                unit_id = req.UnitId,
-                resident_code = Guid.NewGuid().ToString()[..8].ToUpper(),
-                first_name = req.FirstName,
-                second_name = req.SecondName,
-                third_name = req.ThirdName,
-                phone_number = req.PhoneNumber,
-                resident_type = req.ResidentType,
-                family_members_count = req.FamilyMembersCount
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(GridLength.Star),
+                    new ColumnDefinition(GridLength.Star)
+                },
+                ColumnSpacing = 10,
+                Children = { btnCancel, SetCol(btnAdd, 1) }
             };
 
-            _db.Residents.Add(res);
-            unit.unit_status = "مشغول";
-            await _db.SaveChangesAsync();
-
-            return Ok(new { message = "تم التسكين بنجاح", resident_code = res.resident_code });
-        }
-
-        // ══════════════════════════════════════════════════════════
-        //  الزيارات
-        // ══════════════════════════════════════════════════════════
-        [HttpGet("pending-visits")]
-        public async Task<ActionResult> GetPendingVisits()
-            => Ok(await _db.Visits
-                .AsNoTracking()
-                .Where(v => v.visit_status == "معلقة")
-                .OrderByDescending(v => v.visit_date)
-                .ToListAsync());
-
-        [HttpPut("approve-visit")]
-        public async Task<ActionResult> ApproveVisit([FromBody] ApproveVisitRequest req)
-        {
-            var visit = await _db.Visits.FindAsync((int?)req.VisitId);
-            if (visit == null) return NotFound(new { message = "الزيارة غير موجودة" });
-
-            visit.visit_status = req.NewStatus;
-            if (req.ExpiryDate.HasValue) visit.expiry_date = req.ExpiryDate.Value;
-
-            await _db.SaveChangesAsync();
-            return Ok(new { message = "تم تحديث حالة الزيارة" });
-        }
-
-        // ══════════════════════════════════════════════════════════
-        //  الصيانة
-        // ══════════════════════════════════════════════════════════
-        [HttpPost("create-maintenance")]
-        public async Task<ActionResult> CreateMaintenance([FromBody] CreateMaintenanceRequest req)
-        {
-            var m = new MaintenanceRequest
+            var form = new VerticalStackLayout
             {
-                unit_id = req.UnitId,
-                service_id = req.ServiceId,
-                request_date = DateTime.Now,
-                request_status = req.RequestStatus ?? "قيد الانتظار",
-                feedback = req.Feedback
+                Spacing = 14,
+                Padding = new Thickness(24, 20),
+                FlowDirection = FlowDirection.RightToLeft,
+                BindingContext = tcs,
+                Children =
+                {
+                    SectionTitle("🛡️  إضافة موظف أمن"),
+                    new BoxView { HeightRequest = 1, Color = Color.FromArgb("#E8E4DF") },
+                    FieldRow("رمز الموظف (employee_code)", entryCode,  required: true),
+                    FieldRow("الاسم الأول (first_name)",   entryFirst, required: true),
+                    namesGrid,
+                    FieldRow("المسمى الوظيفي (job_title)", entryJob),
+                    FieldRow("رقم الهاتف (phone_number)",  entryPhone),
+                    new BoxView { HeightRequest = 1, Color = Color.FromArgb("#E8E4DF"),
+                                  Margin = new Thickness(0, 4) },
+                    btnsGrid
+                }
             };
 
-            _db.MaintenanceRequests.Add(m);
-            await _db.SaveChangesAsync();
+            bool confirmed = await ShowPopupAsync(form, 460);
+            if (!confirmed) return;
 
-            return Ok(new { message = "تم إنشاء طلب الصيانة", request_id = m.request_id });
+            var code = entryCode.Text?.Trim();
+            var firstName = entryFirst.Text?.Trim();
+
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(firstName))
+            {
+                await DisplayAlert("تنبيه", "رمز الموظف والاسم الأول مطلوبان.", "موافق");
+                return;
+            }
+
+            try
+            {
+                var request = new AddEmployeeRequest
+                {
+                    EmployeeCode = code,
+                    FirstName = firstName,
+                    SecondName = NullIfEmpty(entrySecond.Text),
+                    ThirdName = NullIfEmpty(entryThird.Text),
+                    JobTitle = NullIfEmpty(entryJob.Text),
+                    PhoneNumber = NullIfEmpty(entryPhone.Text)
+                };
+
+                var result = await _service.AddEmployeeAsync(request);
+                await DisplayAlert("✅ تم",
+                    $"{result.Message}\nالاسم: {result.FullName}\nالرمز: {result.EmployeeCode}",
+                    "موافق");
+                await LoadEmployeesAsync();
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlert("خطأ", $"فشل في الإضافة:\n{ex.Message}", "إغلاق");
+            }
         }
 
         // ══════════════════════════════════════════════════════════
-        //  الخدمات والوحدات
+        //  حذف موظف — رسالة التأكيد تعرض نوع الأرشفة المتوقعة
         // ══════════════════════════════════════════════════════════
-        [HttpGet("services")]
-        public async Task<ActionResult> GetServices()
-            => Ok(await _db.FinancialConstants.AsNoTracking().ToListAsync());
+        private async void OnDeleteEmployeeClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button btn) return;
+            if (btn.CommandParameter is not int id) return;
 
-        [HttpGet("available-units")]
-        public async Task<ActionResult> GetAvailableUnits()
-            => Ok(await _db.HousingUnits.AsNoTracking()
-                .Where(u => u.unit_status == "فارغ")
-                .ToListAsync());
+            if (id == _currentEmployeeId)
+            {
+                await DisplayAlert("⚠️ غير مسموح",
+                    "لا يمكنك حذف حسابك الخاص.\nيرجى التواصل مع المسؤول.", "موافق");
+                return;
+            }
+
+            var emp = _vm.EmployeeItems.FirstOrDefault(x => x.EmployeeId == id);
+            bool confirm = await DisplayAlert("تأكيد الحذف",
+                $"هل تريد حذف الموظف '{emp?.FullName ?? id.ToString()}'؟\n" +
+                "• إداري  → تُحفظ سجلاته المالية في الأرشيف\n" +
+                "• أمن    → تُحفظ سجلات بلاغاته في الأرشيف",
+                "حذف وأرشفة", "إلغاء");
+            if (!confirm) return;
+
+            try
+            {
+                var result = await _service.DeleteEmployeeAsync(id, _currentEmployeeId);
+
+                // ✅ بناء تفاصيل الرسالة حسب نوع الموظف المُرجع من الخادم
+                string details;
+                if (result.EmployeeTypeArchived == "اداري" && result.FinancialRecordsKept > 0)
+                    details = $"\nنوع الموظف: إداري\nتم الاحتفاظ بـ {result.FinancialRecordsKept} سجل مالي في الأرشيف.";
+                else if (result.EmployeeTypeArchived == "امن" && result.SecurityLogsKept > 0)
+                    details = $"\nنوع الموظف: أمن\nتم الاحتفاظ بـ {result.SecurityLogsKept} سجل بلاغ في الأرشيف.";
+                else if (!string.IsNullOrEmpty(result.EmployeeTypeArchived))
+                    details = $"\nنوع الموظف: {result.EmployeeTypeArchived}\nلا توجد سجلات مرتبطة.";
+                else
+                    details = string.Empty;
+
+                await DisplayAlert("✅ تم", $"{result.Message}{details}", "موافق");
+
+                await Task.WhenAll(LoadEmployeesAsync(), LoadArchivedEmployeesAsync());
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlert("خطأ", $"فشل في الحذف:\n{ex.Message}", "إغلاق");
+            }
+        }
 
         // ══════════════════════════════════════════════════════════
-        //  مساعد
+        //  إضافة للقائمة السوداء
         // ══════════════════════════════════════════════════════════
+        private async void OnAddBlacklistClicked(object sender, EventArgs e)
+        {
+            var entryName = MakeEntry("اسم الشخص المراد إضافته *");
+            var entryReason = MakeEntry("سبب الإدراج (اختياري)");
+
+            var tcs = new TaskCompletionSource<bool>();
+            var btnConfirm = MakeButton("🚫  إضافة للقائمة", "#6B1520", Colors.White);
+            var btnCancel = MakeButton("إلغاء", "#EEEBE8", Color.FromArgb("#555555"));
+
+            btnConfirm.Clicked += (_, _) => tcs.TrySetResult(true);
+            btnCancel.Clicked += (_, _) => tcs.TrySetResult(false);
+
+            var btnsGrid = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(GridLength.Star),
+                    new ColumnDefinition(GridLength.Star)
+                },
+                ColumnSpacing = 10,
+                Children = { btnCancel, SetCol(btnConfirm, 1) }
+            };
+
+            var dateInfo = new Border
+            {
+                BackgroundColor = Color.FromArgb("#FFF8E7"),
+                StrokeThickness = 1,
+                Stroke = new SolidColorBrush(Color.FromArgb("#D4A017")),
+                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle
+                { CornerRadius = new CornerRadius(8) },
+                Padding = new Thickness(12, 8),
+                Content = new Label
+                {
+                    Text = $"📅 تاريخ الإضافة: {DateTime.Now:yyyy/MM/dd} (يُضبط تلقائياً)",
+                    FontSize = 11,
+                    TextColor = Color.FromArgb("#8B6914")
+                }
+            };
+
+            var form = new VerticalStackLayout
+            {
+                Spacing = 16,
+                Padding = new Thickness(28),
+                FlowDirection = FlowDirection.RightToLeft,
+                BindingContext = tcs,
+                Children =
+                {
+                    new Label { Text = "🚫", FontSize = 36, HorizontalOptions = LayoutOptions.Center },
+                    new Label
+                    {
+                        Text = "إضافة إلى القائمة السوداء",
+                        FontSize = 18,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Color.FromArgb("#6B1520"),
+                        HorizontalOptions = LayoutOptions.Center
+                    },
+                    new Label
+                    {
+                        Text = "أدخل بيانات الشخص المراد حظره من دخول المجمع",
+                        FontSize = 12,
+                        TextColor = Color.FromArgb("#888888"),
+                        HorizontalOptions = LayoutOptions.Center,
+                        HorizontalTextAlignment = TextAlignment.Center,
+                        Margin = new Thickness(0, -6, 0, 0)
+                    },
+                    new BoxView { HeightRequest = 1, Color = Color.FromArgb("#E8E4DF") },
+                    FieldRow("اسم الشخص (person_name)", entryName,   required: true),
+                    FieldRow("سبب الحظر (reason)",       entryReason),
+                    dateInfo,
+                    new BoxView { HeightRequest = 1, Color = Color.FromArgb("#E8E4DF") },
+                    btnsGrid
+                }
+            };
+
+            bool confirmed = await ShowPopupAsync(form, 420);
+            if (!confirmed) return;
+
+            var name = entryName.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                await DisplayAlert("تنبيه", "يرجى إدخال اسم الشخص.", "موافق");
+                return;
+            }
+
+            try
+            {
+                var request = new AddBlacklistRequest
+                {
+                    PersonName = name,
+                    EmployeeId = _currentEmployeeId,
+                    Reason = NullIfEmpty(entryReason.Text)
+                };
+                var result = await _service.AddToBlacklistAsync(request);
+                await DisplayAlert("✅ تم", result.Message, "موافق");
+                await LoadBlacklistAsync();
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlert("خطأ", $"فشل في الإضافة:\n{ex.Message}", "إغلاق");
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════
+        //  حذف من القائمة السوداء
+        // ══════════════════════════════════════════════════════════
+        private async void OnDeleteBlacklistClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button btn) return;
+            if (btn.CommandParameter is not int id) return;
+
+            bool confirm = await DisplayAlert("تأكيد الحذف",
+                "هل تريد حذف هذا السجل من القائمة السوداء؟", "حذف", "إلغاء");
+            if (!confirm) return;
+
+            try
+            {
+                var result = await _service.RemoveFromBlacklistAsync(id);
+                await DisplayAlert("✅ تم", result.Message, "موافق");
+                await LoadBlacklistAsync();
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlert("خطأ", $"فشل في الحذف:\n{ex.Message}", "إغلاق");
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════
+        //  Navigation
+        // ══════════════════════════════════════════════════════════
+        private void OnNavDashboardTapped(object sender, TappedEventArgs e)
+        { UpdateTabUI("Dashboard"); CloseSidebar(); }
+
+        private async void OnNavResidentsTapped(object sender, TappedEventArgs e)
+        { UpdateTabUI("Residents"); CloseSidebar(); await Shell.Current.GoToAsync("ResidentsManagementPage"); }
+
+        private async void OnNavVisitsTapped(object sender, TappedEventArgs e)
+        { UpdateTabUI("Visits"); CloseSidebar(); await Shell.Current.GoToAsync("VisitsRequestsPage"); }
+
+        private async void OnNavFinancialsTapped(object sender, EventArgs e)
+        { UpdateTabUI("Financials"); CloseSidebar(); await Shell.Current.GoToAsync("FinancialsPage"); }
+
+        private async void OnNavMaintenanceTapped(object sender, TappedEventArgs e)
+        { UpdateTabUI("Maintenance"); CloseSidebar(); await Shell.Current.GoToAsync("MaintenanceRequestsPage"); }
+
+        private async void OnNavProfileTapped(object sender, TappedEventArgs e)
+        { CloseSidebar(); await Shell.Current.GoToAsync("EmployeeProfilePage"); }
+
+        // ══════════════════════════════════════════════════════════
+        //  UI Helpers
+        // ══════════════════════════════════════════════════════════
+        private static Entry MakeEntry(string placeholder, Keyboard? keyboard = null) => new()
+        {
+            Placeholder = placeholder,
+            FlowDirection = FlowDirection.RightToLeft,
+            BackgroundColor = Color.FromArgb("#F7F5F2"),
+            TextColor = Color.FromArgb("#222222"),
+            PlaceholderColor = Color.FromArgb("#AAAAAA"),
+            FontSize = 14,
+            Margin = new Thickness(0, 4, 0, 0),
+            HeightRequest = 44,
+            Keyboard = keyboard ?? Keyboard.Default
+        };
+
+        private static Button MakeButton(string text, string bgHex, Color textColor) => new()
+        {
+            Text = text,
+            BackgroundColor = Color.FromArgb(bgHex),
+            TextColor = textColor,
+            CornerRadius = 10,
+            HeightRequest = 46,
+            FontSize = 14,
+            FontAttributes = FontAttributes.Bold
+        };
+
+        private static VerticalStackLayout FieldRow(string labelText, View field, bool required = false)
+        {
+            var lbl = new Label
+            {
+                Text = required ? $"{labelText} *" : labelText,
+                FontSize = 12,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Color.FromArgb(required ? "#6B1520" : "#555555"),
+                FlowDirection = FlowDirection.RightToLeft
+            };
+            return new VerticalStackLayout { Spacing = 2, Children = { lbl, field } };
+        }
+
+        private static Label SectionTitle(string text) => new()
+        {
+            Text = text,
+            FontSize = 18,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#6B1520"),
+            HorizontalOptions = LayoutOptions.Center,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+
+        private static T SetCol<T>(T view, int col) where T : View
+        {
+            Grid.SetColumn(view, col);
+            return view;
+        }
+
         private static string? NullIfEmpty(string? s)
             => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+    }
 
-        private static string MapStatusColor(string? status) => status switch
+    // ══════════════════════════════════════════════════════════════
+    //  نماذج عرض البيانات
+    // ══════════════════════════════════════════════════════════════
+    public class EmployeeItemView
+    {
+        public int EmployeeId { get; set; }
+        public string EmployeeCode { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string JobTitle { get; set; } = string.Empty;
+        public string PhoneNumber { get; set; } = string.Empty;
+        public bool IsCurrentUser { get; set; }
+        public bool CanDelete => !IsCurrentUser;
+        public Color DeleteButtonColor => IsCurrentUser
+            ? Color.FromArgb("#CCCCCC")
+            : Color.FromArgb("#E74C3C");
+    }
+
+    public class BlacklistItemView
+    {
+        public int BlacklistId { get; set; }
+        public string PersonName { get; set; } = string.Empty;
+        public int EmployeeId { get; set; }
+        public string AddedByName { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public DateTime AddedDate { get; set; } = DateTime.Now;
+        public bool HasReason => !string.IsNullOrWhiteSpace(Reason);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  رسم الإحصائيات (Bar Chart)
+    // ══════════════════════════════════════════════════════════════
+    public class StatsChartDrawable : IDrawable
+    {
+        private readonly int _residents;
+        private readonly int _occupied;
+        private readonly int _pending;
+        private readonly int _maintenance;
+
+        private static readonly Color[] BarColors =
         {
-            "قيد الانتظار" => "#E67E22",
-            "قيد التنفيذ" => "#3498DB",
-            "تم تنفيذ الطلب" => "#27AE60",
-            "لم يتم تنفيذه" => "#E74C3C",
-            _ => "#95A5A6"
+            Color.FromArgb("#6B1520"),
+            Color.FromArgb("#D4A017"),
+            Color.FromArgb("#E67E22"),
+            Color.FromArgb("#D63031")
         };
+
+        private static readonly string[] Labels =
+            { "السكان", "المشغولة", "الزيارات", "الصيانة" };
+
+        public StatsChartDrawable(int residents, int occupied, int pending, int maintenance)
+        {
+            _residents = residents;
+            _occupied = occupied;
+            _pending = pending;
+            _maintenance = maintenance;
+        }
+
+        public void Draw(ICanvas canvas, RectF dirtyRect)
+        {
+            var values = new[] { _residents, _occupied, _pending, _maintenance };
+            int maxVal = Math.Max(values.Max(), 1);
+
+            float width = dirtyRect.Width;
+            float height = dirtyRect.Height;
+            float padBottom = 30f;
+            float padTop = 20f;
+            float chartHeight = height - padBottom - padTop;
+            float totalBar = width / values.Length;
+            float barWidth = totalBar * 0.5f;
+            float gap = totalBar * 0.25f;
+
+            canvas.StrokeColor = Color.FromArgb("#E8E4DF");
+            canvas.StrokeSize = 1;
+            for (int i = 1; i <= 4; i++)
+            {
+                float y = padTop + chartHeight - chartHeight * i / 4f;
+                canvas.DrawLine(0, y, width, y);
+                canvas.FontSize = 9;
+                canvas.FontColor = Color.FromArgb("#AAAAAA");
+                canvas.DrawString((maxVal * i / 4).ToString(), 2, y - 8, 30, 16,
+                    HorizontalAlignment.Left, VerticalAlignment.Center);
+            }
+
+            for (int i = 0; i < values.Length; i++)
+            {
+                float barHeight = values[i] == 0 ? 2 : (float)values[i] / maxVal * chartHeight;
+                float x = gap + i * totalBar;
+                float y = padTop + chartHeight - barHeight;
+
+                canvas.FillColor = BarColors[i];
+                canvas.FillRoundedRectangle(x, y, barWidth, barHeight, 6);
+
+                canvas.FontSize = 11;
+                canvas.FontColor = BarColors[i];
+                canvas.DrawString(values[i].ToString(), x, y - 16, barWidth, 16,
+                    HorizontalAlignment.Center, VerticalAlignment.Center);
+
+                canvas.FontSize = 10;
+                canvas.FontColor = Color.FromArgb("#777777");
+                canvas.DrawString(Labels[i], x - 5, height - padBottom + 4, barWidth + 10, padBottom,
+                    HorizontalAlignment.Center, VerticalAlignment.Top);
+            }
+        }
     }
 }

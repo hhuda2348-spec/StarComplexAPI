@@ -22,6 +22,7 @@ public class Employee
     public string? third_name { get; set; }
 
     [StringLength(100)]
+    // العنوان الوظيفي يكون  اما موظف امن او موظف اداري  او مدير 
     public string? job_title { get; set; }
 
     [StringLength(20)]
@@ -38,6 +39,7 @@ public class Employee
     public byte[]? RowVersion { get; set; }
 
     [StringLength(20)]
+    // نوع الموظف امن او اداري او مدير
     public string? employee_type { get; set; }
 
     [StringLength(255)]
