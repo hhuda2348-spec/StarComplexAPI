@@ -6,6 +6,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Text.Json.Serialization;
+using train.Models;
 
 namespace StarComplexAPI.Controllers
 {

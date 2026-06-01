@@ -1,6 +1,7 @@
 ﻿
 using Microsoft.EntityFrameworkCore;
 using StarComplexAPI.Models;
+using train.Models;
 
 namespace StarComplexAPI.Data
 {

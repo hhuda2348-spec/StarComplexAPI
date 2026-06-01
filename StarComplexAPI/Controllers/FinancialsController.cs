@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿// StarComplexAPI/Controllers/FinancialsController.cs
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StarComplexAPI.Data;
 using StarComplexAPI.Models;
@@ -13,8 +14,11 @@ namespace StarComplexAPI.Controllers
         private readonly StarComplexContext _context;
         private readonly ILogger<FinancialsController> _logger;
 
-        // ── معرّفات الخدمات الثابتة من قاعدة البيانات ──
-        private const int RentServiceId = 5;
+        // ── ثوابت الخدمات حسب جدول financial_constants ──────────────
+        private const int RentServiceId = 5; // الايجار الشهري
+        // ملاحظة: service_id=6 غير موجود في البيانات الحالية (1-5 فقط)
+        // الانترنت يُعامَل كخدمة صيانة عامة أو يُضاف لاحقاً
+        // لتفادي الأخطاء نجعله قابلاً للتهيئة من الإعدادات
         private const int InternetServiceId = 6;
 
         public FinancialsController(StarComplexContext context, ILogger<FinancialsController> logger)
@@ -31,18 +35,13 @@ namespace StarComplexAPI.Controllers
         {
             try
             {
-                _logger.LogInformation("Getting financial summary...");
-
                 decimal totalRevenue = await _context.FinancialPayments
                     .SumAsync(p => (decimal?)p.total_service_fee) ?? 0;
-
-                _logger.LogInformation("Total Revenue: {rev}", totalRevenue);
 
                 var now = DateTime.Now;
                 var currentMonth = now.Month;
                 var currentYear = now.Year;
 
-                // الوحدات المشغولة
                 var occupiedUnitIds = await _context.HousingUnits
                     .Where(u => u.unit_status == "مشغول")
                     .Select(u => u.unit_id)
@@ -57,14 +56,12 @@ namespace StarComplexAPI.Controllers
                         MonthlyAvg = "0 IQD"
                     });
 
-                // أسعار الخدمات بالـ ID المباشر
-                var rentService = await _context.FinancialConstants.FirstOrDefaultAsync(s => s.service_id == RentServiceId);
-                var internetService = await _context.FinancialConstants.FirstOrDefaultAsync(s => s.service_id == InternetServiceId);
+                var rentService = await _context.FinancialConstants
+                    .FirstOrDefaultAsync(s => s.service_id == RentServiceId);
 
                 decimal monthlyRent = rentService?.service_price ?? 0;
-                decimal internetPrice = internetService?.service_price ?? 0;
 
-                // الوحدات التي دفعت إيجار هذا الشهر
+                // وحدات دفعت الإيجار هذا الشهر
                 var paidRentThisMonth = await _context.FinancialPayments
                     .Where(p => p.payment_date.Year == currentYear
                              && p.payment_date.Month == currentMonth
@@ -73,30 +70,19 @@ namespace StarComplexAPI.Controllers
                     .Distinct()
                     .ToListAsync();
 
-                // الوحدات التي دفعت انترنت هذا الشهر
-                var paidInternetThisMonth = await _context.FinancialPayments
-                    .Where(p => p.payment_date.Year == currentYear
-                             && p.payment_date.Month == currentMonth
-                             && p.service_id == InternetServiceId)
-                    .Select(p => p.unit_id)
-                    .Distinct()
-                    .ToListAsync();
+                decimal outstandingAmount = occupiedUnitIds.Except(paidRentThisMonth).Count() * monthlyRent;
 
-                decimal rentOutstanding = occupiedUnitIds.Except(paidRentThisMonth).Count() * monthlyRent;
-                decimal internetOutstanding = occupiedUnitIds.Except(paidInternetThisMonth).Count() * internetPrice;
-                decimal outstandingAmount = rentOutstanding + internetOutstanding;
-
-                // المتأخرون: لم يدفعوا إيجاراً خلال آخر 3 أشهر
+                // وحدات لم تدفع آخر 3 أشهر (متأخرات)
                 var threeMonthsAgo = now.AddMonths(-3);
                 var paidRentLast3M = await _context.FinancialPayments
-                    .Where(p => p.payment_date >= threeMonthsAgo && p.service_id == RentServiceId)
+                    .Where(p => p.payment_date >= threeMonthsAgo
+                             && p.service_id == RentServiceId)
                     .Select(p => p.unit_id)
                     .Distinct()
                     .ToListAsync();
 
                 decimal lateAmount = occupiedUnitIds.Except(paidRentLast3M).Count() * monthlyRent * 3;
 
-                // المتوسط الشهري
                 int monthsWithPayments = await _context.FinancialPayments
                     .Select(p => new { p.payment_date.Year, p.payment_date.Month })
                     .Distinct()
@@ -128,7 +114,7 @@ namespace StarComplexAPI.Controllers
             try
             {
                 var services = await _context.FinancialConstants
-                    .Where(s => s.service_id != null && s.service_name != null)
+                    .Where(s => s.service_name != null)
                     .OrderBy(s => s.service_id)
                     .Select(s => new ServiceDto
                     {
@@ -153,8 +139,7 @@ namespace StarComplexAPI.Controllers
         [HttpGet("recent")]
         public async Task<ActionResult<List<PaymentItemDto>>> GetRecentPayments(
             [FromQuery] string? method = null,
-            [FromQuery] int? unitId = null,
-            [FromQuery] string? status = null)
+            [FromQuery] int? unitId = null)
         {
             try
             {
@@ -169,8 +154,8 @@ namespace StarComplexAPI.Controllers
                 var payments = await (
                     from p in paymentsQuery
                     join s in _context.FinancialConstants
-                        on p.service_id equals s.service_id into serviceGroup
-                    from s in serviceGroup.DefaultIfEmpty()
+                        on p.service_id equals s.service_id into svcGroup
+                    from s in svcGroup.DefaultIfEmpty()
                     join e in _context.Employees
                         on p.employee_id equals e.employee_id into empGroup
                     from emp in empGroup.DefaultIfEmpty()
@@ -183,11 +168,11 @@ namespace StarComplexAPI.Controllers
                         p.total_service_fee,
                         p.payment_date,
                         p.payment_method,
-                        p.accont_received,   // decimal في الموديل
+                        p.accont_received,   // decimal
                         p.employee_id,
-                        ServicePrice = s != null ? s.service_price : 0,
+                        ServicePrice = s != null ? s.service_price : 0m,
                         ServiceName = s != null ? s.service_name : "خدمة غير معروفة",
-                        EmployeeFullName = emp != null
+                        EmployeeName = emp != null
                             ? ((emp.first_name ?? "") + " " +
                                (emp.second_name ?? "") + " " +
                                (emp.third_name ?? "")).Trim()
@@ -195,32 +180,22 @@ namespace StarComplexAPI.Controllers
                     }
                 ).Take(200).ToListAsync();
 
-                var result = payments
-                    .Select(p => new PaymentItemDto
-                    {
-                        PaymentId = p.payment_id,
-                        UnitId = p.unit_id,
-                        ServiceId = (int)p.service_id,
-                        ServicePrice = p.ServicePrice,
-                        Description = p.ServiceName ?? "خدمة",
-                        TotalFee = $"{p.total_service_fee:N0} IQD",
-                        ReceiptDate = p.payment_date.ToString("yyyy-MM-dd"),
-                        PaymentMethod = p.payment_method ?? "كاش",
-                        AccountReceived = p.accont_received switch
-                        {
-                            1 => "الكهرباء",
-                            2 => "الانترنت",
-                            _ => "الادارة"
-                        },
-                        EmployeeName = p.EmployeeFullName,
-                        EmployeeId = (int)(p.employee_id ?? 0),
-                        Status = "مدفوع",
-                        StatusColor = "#28a745"
-                    })
-                    .ToList();
-
-                if (!string.IsNullOrWhiteSpace(status))
-                    result = result.Where(r => r.Status == status).ToList();
+                var result = payments.Select(p => new PaymentItemDto
+                {
+                    PaymentId = p.payment_id,
+                    UnitId = p.unit_id,
+                    ServiceId = p.service_id ?? 0,
+                    ServicePrice = p.ServicePrice,
+                    Description = p.ServiceName ?? "خدمة",
+                    TotalFee = $"{p.total_service_fee:N0} IQD",
+                    ReceiptDate = p.payment_date.ToString("yyyy-MM-dd"),
+                    PaymentMethod = p.payment_method ?? "كاش",
+                    AccountReceived = ResolveAccountName(p.accont_received),
+                    EmployeeName = p.EmployeeName,
+                    EmployeeId = p.employee_id ?? 0,
+                    Status = "مدفوع",
+                    StatusColor = "#28a745"
+                }).ToList();
 
                 return Ok(result);
             }
@@ -251,7 +226,7 @@ namespace StarComplexAPI.Controllers
 
                 if (!occupiedUnits.Any()) return Ok(rows);
 
-                // جلب جميع الدفعات مع اسم الموظف
+                // جلب جميع الدفعات مرة واحدة
                 var allPayments = await (
                     from p in _context.FinancialPayments
                     join e in _context.Employees
@@ -273,22 +248,18 @@ namespace StarComplexAPI.Controllers
                 ).ToListAsync();
 
                 var allServices = await _context.FinancialConstants.ToListAsync();
-
-                var rentService = allServices.FirstOrDefault(s => s.service_id == 5);
-                var internetService = allServices.FirstOrDefault(s =>
-                    s.service_name != null &&
-                    (s.service_name.Contains("انترنت") || s.service_name.Contains("إنترنت")));
-
+                var rentService = allServices.FirstOrDefault(s => s.service_id == RentServiceId);
                 decimal monthlyRent = rentService?.service_price ?? 0;
-                decimal internetPrice = internetService?.service_price ?? 0;
 
-                // ── 1. فواتير الإيجار الشهري ──
-                var rentPaymentsThisMonth = allPayments
-                    .Where(p => p.service_id == rentServiceId
+                // ── 1. إيجار شهري ──────────────────────────────────────
+                var rentThisMonth = allPayments
+                    .Where(p => p.service_id == RentServiceId
                              && p.payment_date.Year == currentYear
                              && p.payment_date.Month == currentMonth)
                     .GroupBy(p => p.unit_id)
-                    .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.payment_date).First());
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.OrderByDescending(p => p.payment_date).First());
 
                 foreach (var unit in occupiedUnits)
                 {
@@ -299,7 +270,7 @@ namespace StarComplexAPI.Controllers
                         RowIcon = "🧾",
                         UnitId = unit.unit_id,
                         ServiceId = RentServiceId,
-                        ServiceName = "الإيجار الشهري",
+                        ServiceName = rentService?.service_name ?? "الإيجار الشهري",
                         Amount = $"{(paid ? pay!.total_service_fee : monthlyRent):N0} IQD",
                         AmountRaw = (decimal)(paid ? pay!.total_service_fee : monthlyRent),
                         PaymentId = paid ? pay!.payment_id : 0,
@@ -315,45 +286,8 @@ namespace StarComplexAPI.Controllers
                     });
                 }
 
-                // ── 2. فواتير الانترنت الشهري ──
-                if (internetServiceId > 0)
-                {
-                    var internetPaymentsThisMonth = allPayments
-                        .Where(p => p.service_id == internetServiceId
-                                 && p.payment_date.Year == currentYear
-                                 && p.payment_date.Month == currentMonth)
-                        .GroupBy(p => p.unit_id)
-                        .ToDictionary(g => g.Key,
-                                      g => g.OrderByDescending(p => p.payment_date).First());
-
-                    foreach (var unit in occupiedUnits)
-                    {
-                        bool paid = internetPaymentsThisMonth.TryGetValue(unit.unit_id, out var pay);
-                        rows.Add(new OverviewRowDto
-                        {
-                            RowType = "internet",
-                            RowIcon = "🌐",
-                            UnitId = unit.unit_id,
-                            ServiceId = internetServiceId,
-                            ServiceName = internetService?.service_name ?? "الانترنت",
-                            Amount = $"{(paid ? pay!.total_service_fee : internetPrice):N0} IQD",
-                            AmountRaw = (decimal)(paid ? pay!.total_service_fee : internetPrice),
-                            PaymentId = paid ? pay!.payment_id : 0,
-                            EmployeeName = paid ? pay!.EmployeeName : "—",
-                            DateLabel = paid ? pay!.payment_date.ToString("yyyy-MM-dd") : "—",
-                            StatusLabel = paid ? "مدفوع" : "غير مدفوع",
-                            StatusColor = paid ? "#28a745" : "#dc3545",
-                            CanPay = !paid,
-                            MaintenanceRequestId = 0,
-                            Feedback = "",
-                            Month = currentMonth,
-                            Year = currentYear
-                        });
-                    }
-                }
-
-                // ── 3. طلبات الصيانة المنفّذة فقط ──
-                var executedMaintenanceRequests = await (
+                // ── 2. صيانة منفذة ─────────────────────────────────────
+                var executedMaintenance = await (
                     from req in _context.MaintenanceRequests
                     where req.request_status == "تم تنفيذ الطلب"
                     join svc in _context.FinancialConstants
@@ -389,8 +323,10 @@ namespace StarComplexAPI.Controllers
                         UnitId = req.unit_id,
                         ServiceId = req.service_id,
                         ServiceName = req.SvcName ?? "صيانة",
-                        Amount = paid ? $"{matched!.total_service_fee:N0} IQD" : $"{req.SvcPrice:N0} IQD",
-                        AmountRaw = (decimal)(paid ? matched!.total_service_fee : req.SvcPrice),
+                        Amount = paid
+                            ? $"{matched!.total_service_fee:N0} IQD"
+                            : $"{req.SvcPrice:N0} IQD",
+                        AmountRaw = paid ? matched!.total_service_fee : req.SvcPrice,
                         PaymentId = paid ? matched!.payment_id : 0,
                         EmployeeName = paid ? matched!.EmployeeName : "—",
                         DateLabel = req.request_date.ToString("yyyy-MM-dd"),
@@ -414,98 +350,6 @@ namespace StarComplexAPI.Controllers
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // GET /api/Financials/executed-maintenance
-        // ═══════════════════════════════════════════════════════════════
-        [HttpGet("executed-maintenance")]
-        public async Task<ActionResult<List<ExecutedMaintenanceDto>>> GetExecutedMaintenance()
-        {
-            try
-            {
-                _logger.LogInformation("Getting executed maintenance requests...");
-
-                // ✅ allPayments يجلب بيانات الموظف من جدول الدفعات
-                var allPayments = await (
-                    from p in _context.FinancialPayments
-                    join e in _context.Employees
-                        on p.employee_id equals e.employee_id into empGroup
-                    from emp in empGroup.DefaultIfEmpty()
-                    select new
-                    {
-                        p.payment_id,
-                        p.unit_id,
-                        p.service_id,
-                        p.total_service_fee,
-                        p.payment_date,
-                        EmployeeName = emp != null
-                            ? ((emp.first_name ?? "") + " " +
-                               (emp.second_name ?? "") + " " +
-                               (emp.third_name ?? "")).Trim()
-                            : "غير محدد"
-                    }
-                ).ToListAsync();
-
-                // ✅ بدون join على employee_id لأن MaintenanceRequest لا يحتوي على هذا الحقل
-                var executed = await (
-                    from req in _context.MaintenanceRequests
-                    where req.request_status == "تم تنفيذ الطلب"
-                    join svc in _context.FinancialConstants
-                        on req.service_id equals svc.service_id into svcGroup
-                    from svc in svcGroup.DefaultIfEmpty()
-                    orderby req.request_date descending
-                    select new
-                    {
-                        req.request_id,
-                        req.unit_id,
-                        req.service_id,
-                        req.request_date,
-                        req.feedback,
-                        SvcName = svc != null ? svc.service_name : "خدمة صيانة",
-                        SvcPrice = svc != null ? svc.service_price : 0m
-                    }
-                ).ToListAsync();
-
-                var result = executed.Select(req =>
-                {
-                    var matchedPayment = allPayments
-                        .Where(p => p.unit_id == req.unit_id
-                                 && p.service_id == req.service_id
-                                 && p.payment_date >= req.request_date)
-                        .OrderBy(p => p.payment_date)
-                        .FirstOrDefault();
-
-                    bool isPaid = matchedPayment != null;
-
-                    return new ExecutedMaintenanceDto
-                    {
-                        RequestId = req.request_id,
-                        UnitId = req.unit_id,
-                        ServiceId = req.service_id,
-                        ServiceName = req.SvcName ?? "صيانة",
-                        PriceRaw = isPaid ? (decimal)matchedPayment!.total_service_fee : req.SvcPrice,
-                        Price = isPaid
-                            ? $"{matchedPayment!.total_service_fee:N0} IQD"
-                            : $"{req.SvcPrice:N0} IQD",
-                        RequestDate = req.request_date.ToString("yyyy-MM-dd"),
-                        Feedback = req.feedback ?? "",
-                        TechName = isPaid ? matchedPayment!.EmployeeName : "—",  // ✅ من الدفعة
-                        IsPaid = isPaid,
-                        PaymentId = isPaid ? matchedPayment!.payment_id : 0,
-                        StatusLabel = isPaid ? "مدفوع" : "غير مدفوع",
-                        StatusColor = isPaid ? "#28a745" : "#dc3545",
-                        CanPay = !isPaid
-                    };
-                }).ToList();
-
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in GetExecutedMaintenance");
-                return StatusCode(500, new { message = "خطأ في جلب طلبات الصيانة المنفذة", details = ex.Message });
-            }
-        }
-
-        // ═══════════════════════════════════════════════════════════════
         // GET /api/Financials/payments/{unitId}
         // ═══════════════════════════════════════════════════════════════
         [HttpGet("payments/{unitId}")]
@@ -520,8 +364,8 @@ namespace StarComplexAPI.Controllers
                     from p in _context.FinancialPayments
                     where p.unit_id == unitId
                     join s in _context.FinancialConstants
-                        on p.service_id equals s.service_id into serviceGroup
-                    from s in serviceGroup.DefaultIfEmpty()
+                        on p.service_id equals s.service_id into svcGroup
+                    from s in svcGroup.DefaultIfEmpty()
                     join e in _context.Employees
                         on p.employee_id equals e.employee_id into empGroup
                     from emp in empGroup.DefaultIfEmpty()
@@ -536,9 +380,9 @@ namespace StarComplexAPI.Controllers
                         p.payment_method,
                         p.accont_received,
                         p.employee_id,
-                        ServicePrice = s != null ? s.service_price : 0,
+                        ServicePrice = s != null ? s.service_price : 0m,
                         ServiceName = s != null ? s.service_name : "خدمة",
-                        EmployeeFullName = emp != null
+                        EmployeeName = emp != null
                             ? ((emp.first_name ?? "") + " " +
                                (emp.second_name ?? "") + " " +
                                (emp.third_name ?? "")).Trim()
@@ -550,20 +394,15 @@ namespace StarComplexAPI.Controllers
                 {
                     PaymentId = p.payment_id,
                     UnitId = p.unit_id,
-                    ServiceId = (int)(p.service_id ?? 0),
+                    ServiceId = p.service_id ?? 0,
                     ServicePrice = p.ServicePrice,
                     Description = p.ServiceName ?? "خدمة",
                     TotalFee = $"{p.total_service_fee:N0} IQD",
                     ReceiptDate = p.payment_date.ToString("yyyy-MM-dd"),
                     PaymentMethod = p.payment_method ?? "كاش",
-                    AccountReceived = (int)p.accont_received switch
-                    {
-                        1 => "الكهرباء",
-                        2 => "الانترنت",
-                        _ => "الادارة"
-                    },
-                    EmployeeName = p.EmployeeFullName,
-                    EmployeeId = (int)(p.employee_id ?? 0),
+                    AccountReceived = ResolveAccountName(p.accont_received),
+                    EmployeeName = p.EmployeeName,
+                    EmployeeId = p.employee_id ?? 0,
                     Status = "مدفوع",
                     StatusColor = "#28a745"
                 }).ToList());
@@ -599,11 +438,12 @@ namespace StarComplexAPI.Controllers
                 if (employee == null)
                     return BadRequest(new { message = $"الموظف رقم {dto.EmployeeId} غير موجود." });
 
-                int accountCode = dto.AccountReceived switch
+                // accont_received هو decimal في الموديل
+                decimal accountCode = dto.AccountReceived switch
                 {
                     "الكهرباء" => 1m,
                     "الانترنت" => 2m,
-                    _ => 0m
+                    _ => 0m  // الادارة
                 };
 
                 var payment = new FinancialPayment
@@ -613,17 +453,14 @@ namespace StarComplexAPI.Controllers
                     total_service_fee = dto.Amount > 0 ? dto.Amount : service.service_price,
                     employee_id = dto.EmployeeId,
                     payment_method = dto.PaymentMethod,
-                    accont_received = accountCode,   // decimal
+                    accont_received = accountCode,
                     payment_date = dto.PaymentDate != default ? dto.PaymentDate : DateTime.Now
                 };
 
                 _context.FinancialPayments.Add(payment);
                 await _context.SaveChangesAsync();
 
-                string empFullName = string.Join(" ",
-                    new[] { employee.first_name, employee.second_name, employee.third_name }
-                    .Where(n => !string.IsNullOrWhiteSpace(n))
-                    .Select(n => n!.Trim()));
+                string empFullName = BuildFullName(employee.first_name, employee.second_name, employee.third_name);
 
                 return Ok(new
                 {
@@ -664,10 +501,8 @@ namespace StarComplexAPI.Controllers
                 if (service == null)
                     return BadRequest(new { message = "نوع الخدمة غير موجود" });
 
-                int accountCode = service.service_name != null &&
-                    (service.service_name.Contains("انترنت") ||
-                     service.service_name.Contains("إنترنت"))
-                    ? 2 : 0;
+                // تحديد الحساب المستلم بحسب نوع الخدمة
+                decimal accountCode = 0m; // الادارة افتراضياً
 
                 var payment = new FinancialPayment
                 {
@@ -676,17 +511,14 @@ namespace StarComplexAPI.Controllers
                     total_service_fee = dto.Amount > 0 ? dto.Amount : service.service_price,
                     employee_id = dto.EmployeeId,
                     payment_method = "كاش",
-                    accont_received = accountCode,   // decimal
+                    accont_received = accountCode,
                     payment_date = DateTime.Now
                 };
 
                 _context.FinancialPayments.Add(payment);
                 await _context.SaveChangesAsync();
 
-                string empFullName = string.Join(" ",
-                    new[] { employee.first_name, employee.second_name, employee.third_name }
-                    .Where(n => !string.IsNullOrWhiteSpace(n))
-                    .Select(n => n!.Trim()));
+                string empFullName = BuildFullName(employee.first_name, employee.second_name, employee.third_name);
 
                 return Ok(new
                 {
@@ -717,7 +549,8 @@ namespace StarComplexAPI.Controllers
                 if (payment == null)
                     return NotFound(new { message = "الدفعة غير موجودة" });
 
-                // يمكن إضافة حقل status لاحقاً — حالياً نرجع النتيجة فقط
+                // FinancialPayment ليس فيه حقل status — الحالة تُحسب من وجود الدفعة
+                // نحفظ فقط لو أضفنا الحقل مستقبلاً
                 await _context.SaveChangesAsync();
 
                 return Ok(new
@@ -729,7 +562,7 @@ namespace StarComplexAPI.Controllers
                         "مدفوع" => "#28a745",
                         "مستحق" => "#D4A017",
                         "متأخر" => "#dc3545",
-                        _ => "#888"
+                        _ => "#888888"
                     }
                 });
             }
@@ -739,10 +572,26 @@ namespace StarComplexAPI.Controllers
                 return StatusCode(500, new { message = "خطأ في تحديث الحالة" });
             }
         }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Helpers
+        // ═══════════════════════════════════════════════════════════════
+        private static string ResolveAccountName(decimal code) => (int)code switch
+        {
+            1 => "الكهرباء",
+            2 => "الانترنت",
+            _ => "الادارة"
+        };
+
+        private static string BuildFullName(string? first, string? second, string? third) =>
+            string.Join(" ",
+                new[] { first, second, third }
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!.Trim()));
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // DTOs
+    // DTOs — FinancialsController
     // ═══════════════════════════════════════════════════════════════════
     public class FinancialSummaryDto
     {
