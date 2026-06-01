@@ -326,7 +326,7 @@ namespace StarComplexAPI.Controllers
                         Amount = paid
                             ? $"{matched!.total_service_fee:N0} IQD"
                             : $"{req.SvcPrice:N0} IQD",
-                        AmountRaw = paid ? matched!.total_service_fee : req.SvcPrice,
+                        AmountRaw = (decimal)(paid ? matched!.total_service_fee : req.SvcPrice),
                         PaymentId = paid ? matched!.payment_id : 0,
                         EmployeeName = paid ? matched!.EmployeeName : "—",
                         DateLabel = req.request_date.ToString("yyyy-MM-dd"),
