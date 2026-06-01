@@ -232,6 +232,13 @@ namespace StarComplexAPI.Controllers
 
         // ═══════════════════════════════════════════════════════════════
         // GET /api/Financials/overview
+        //
+        // ✅ المنطق الصحيح لطلبات الصيانة:
+        //    — نجلب فقط الطلبات التي request_status == "تم تنفيذ الطلب"
+        //    — كل طلب صيانة منفّذ له سطر مستقل في الجدول (بـ request_id الخاص به)
+        //    — نتحقق من وجود دفعة مرتبطة بنفس (unit_id + service_id)
+        //      وتاريخها >= request_date لهذا الطلب بالذات
+        //    — إذا وُجدت دفعة → مدفوع، وإلا → غير مدفوع + CanPay = true
         // ═══════════════════════════════════════════════════════════════
         [HttpGet("overview")]
         public async Task<ActionResult<List<OverviewRowDto>>> GetOverview()
@@ -244,6 +251,7 @@ namespace StarComplexAPI.Controllers
 
                 var rows = new List<OverviewRowDto>();
 
+                // ── الوحدات المشغولة ──────────────────────────────────
                 var occupiedUnits = await _context.HousingUnits
                     .Where(u => u.unit_status == "مشغول")
                     .OrderBy(u => u.unit_id)
@@ -252,6 +260,7 @@ namespace StarComplexAPI.Controllers
                 if (!occupiedUnits.Any())
                     return Ok(rows);
 
+                // ── جلب كل الدفعات مرة واحدة ─────────────────────────
                 var allPayments = await (
                     from p in _context.FinancialPayments
                     join e in _context.Employees
@@ -274,6 +283,7 @@ namespace StarComplexAPI.Controllers
                     }
                 ).ToListAsync();
 
+                // ── أنواع الخدمات ─────────────────────────────────────
                 var allServices = await _context.FinancialConstants.ToListAsync();
 
                 var rentService = allServices.FirstOrDefault(s => s.service_id == 5);
@@ -286,13 +296,16 @@ namespace StarComplexAPI.Controllers
                 decimal internetPrice = internetService?.service_price ?? 0;
                 int internetServiceId = internetService?.service_id ?? 0;
 
-                // ── 1. فواتير الإيجار الشهري ──
+                // ══════════════════════════════════════════════════════
+                // 1. فواتير الإيجار الشهري — لكل وحدة مشغولة
+                // ══════════════════════════════════════════════════════
                 var rentPaymentsThisMonth = allPayments
                     .Where(p => p.service_id == rentServiceId
                              && p.payment_date.Year == currentYear
                              && p.payment_date.Month == currentMonth)
                     .GroupBy(p => p.unit_id)
-                    .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.payment_date).First());
+                    .ToDictionary(g => g.Key,
+                                  g => g.OrderByDescending(p => p.payment_date).First());
 
                 foreach (var unit in occupiedUnits)
                 {
@@ -319,7 +332,9 @@ namespace StarComplexAPI.Controllers
                     });
                 }
 
-                // ── 2. فواتير الانترنت الشهري ──
+                // ══════════════════════════════════════════════════════
+                // 2. فواتير الانترنت الشهري — لكل وحدة مشغولة
+                // ══════════════════════════════════════════════════════
                 if (internetServiceId > 0)
                 {
                     var internetPaymentsThisMonth = allPayments
@@ -327,7 +342,8 @@ namespace StarComplexAPI.Controllers
                                  && p.payment_date.Year == currentYear
                                  && p.payment_date.Month == currentMonth)
                         .GroupBy(p => p.unit_id)
-                        .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.payment_date).First());
+                        .ToDictionary(g => g.Key,
+                                      g => g.OrderByDescending(p => p.payment_date).First());
 
                     foreach (var unit in occupiedUnits)
                     {
@@ -355,13 +371,28 @@ namespace StarComplexAPI.Controllers
                     }
                 }
 
-                // ── 3. طلبات الصيانة المكتملة ──
-                var maintenanceDone = await (
+                // ══════════════════════════════════════════════════════
+                // 3. طلبات الصيانة المنفّذة فقط
+                //
+                //    الشرط: request_status == "تم تنفيذ الطلب"
+                //
+                //    لكل طلب نبحث عن دفعة تُطابق:
+                //      • unit_id    == طلب.unit_id
+                //      • service_id == طلب.service_id
+                //      • payment_date >= طلب.request_date
+                //
+                //    إذا وُجدت دفعة مطابقة → الطلب مدفوع  (CanPay = false)
+                //    إذا لم تُوجد           → الطلب غير مدفوع (CanPay = true)
+                //
+                //    كل طلب صيانة سطر مستقل حتى لو نفس الوحدة/الخدمة
+                // ══════════════════════════════════════════════════════
+                var executedMaintenanceRequests = await (
                     from req in _context.MaintenanceRequests
                     where req.request_status == "تم تنفيذ الطلب"
                     join svc in _context.FinancialConstants
                         on req.service_id equals svc.service_id into svcGroup
                     from svc in svcGroup.DefaultIfEmpty()
+                    orderby req.request_date descending
                     select new
                     {
                         req.request_id,
@@ -370,44 +401,53 @@ namespace StarComplexAPI.Controllers
                         req.request_date,
                         req.feedback,
                         SvcName = svc != null ? svc.service_name : "خدمة صيانة",
-                        SvcPrice = svc != null ? svc.service_price : 0
+                        SvcPrice = svc != null ? svc.service_price : 0m
                     }
-                ).OrderByDescending(r => r.request_date).ToListAsync();
+                ).ToListAsync();
 
-                foreach (var m in maintenanceDone)
+                foreach (var req in executedMaintenanceRequests)
                 {
-                    var matchedPay = allPayments
-                        .Where(p => p.unit_id == m.unit_id
-                                 && p.service_id == m.service_id
-                                 && p.payment_date >= m.request_date)
+                    // ✅ نبحث عن دفعة مرتبطة بهذا الطلب تحديداً
+                    //    (نفس الوحدة + نفس الخدمة + تاريخ الدفع >= تاريخ الطلب)
+                    var matchedPayment = allPayments
+                        .Where(p => p.unit_id == req.unit_id
+                                 && p.service_id == req.service_id
+                                 && p.payment_date >= req.request_date)
                         .OrderBy(p => p.payment_date)
                         .FirstOrDefault();
 
-                    bool paid = matchedPay != null;
+                    bool paid = matchedPayment != null;
 
                     rows.Add(new OverviewRowDto
                     {
                         RowType = "maintenance",
                         RowIcon = "🔧",
-                        UnitId = m.unit_id,
-                        ServiceId = m.service_id,
-                        ServiceName = m.SvcName ?? "صيانة",
+                        UnitId = req.unit_id,
+                        ServiceId = req.service_id,
+                        ServiceName = req.SvcName ?? "صيانة",
                         Amount = paid
-                            ? $"{matchedPay!.total_service_fee:N0} IQD"
-                            : $"{m.SvcPrice:N0} IQD",
-                        AmountRaw = (decimal)(paid ? matchedPay!.total_service_fee : m.SvcPrice),
-                        PaymentId = paid ? matchedPay!.payment_id : 0,
-                        EmployeeName = paid ? matchedPay!.EmployeeName : "—",
-                        DateLabel = m.request_date.ToString("yyyy-MM-dd"),
+                            ? $"{matchedPayment!.total_service_fee:N0} IQD"
+                            : $"{req.SvcPrice:N0} IQD",
+                        AmountRaw = (decimal)(paid
+                            ? matchedPayment!.total_service_fee
+                            : req.SvcPrice),
+                        PaymentId = paid ? matchedPayment!.payment_id : 0,
+                        EmployeeName = paid ? matchedPayment!.EmployeeName : "—",
+                        DateLabel = req.request_date.ToString("yyyy-MM-dd"),
                         StatusLabel = paid ? "مدفوع" : "غير مدفوع",
                         StatusColor = paid ? "#28a745" : "#dc3545",
                         CanPay = !paid,
-                        MaintenanceRequestId = m.request_id,
-                        Feedback = m.feedback ?? ""
+                        MaintenanceRequestId = req.request_id,
+                        Feedback = req.feedback ?? "",
+                        Month = req.request_date.Month,
+                        Year = req.request_date.Year
                     });
                 }
 
-                return Ok(rows.OrderBy(r => r.UnitId).ThenBy(r => r.RowType).ToList());
+                return Ok(rows
+                    .OrderBy(r => r.UnitId)
+                    .ThenBy(r => r.RowType)
+                    .ToList());
             }
             catch (Exception ex)
             {
@@ -550,9 +590,6 @@ namespace StarComplexAPI.Controllers
 
         // ═══════════════════════════════════════════════════════════════
         // POST /api/Financials/register
-        //
-        // ✅ إزالة تحقق employee_type — أي موظف مسجّل يستطيع تسجيل دفعة
-        //    (التحقق من الصلاحيات يتم عبر تسجيل الدخول في التطبيق)
         // ═══════════════════════════════════════════════════════════════
         [HttpPost("register")]
         public async Task<ActionResult> RegisterPayment([FromBody] RegisterPaymentDto dto)
@@ -622,10 +659,6 @@ namespace StarComplexAPI.Controllers
 
         // ═══════════════════════════════════════════════════════════════
         // POST /api/Financials/pay-invoice
-        //
-        // ✅ إزالة تحقق employee_type — أي موظف مسجّل يستطيع الدفع
-        //    المشكلة: الكود القديم كان يرفض بسبب employee_type لا يحتوي
-        //    "admin" أو "إدارة" — حُلّت بإزالة هذا التحقق تماماً
         // ═══════════════════════════════════════════════════════════════
         [HttpPost("pay-invoice")]
         public async Task<ActionResult> PayInvoice([FromBody] PayInvoiceDto dto)
@@ -651,7 +684,6 @@ namespace StarComplexAPI.Controllers
                 if (service == null)
                     return BadRequest(new { message = "نوع الخدمة غير موجود" });
 
-                // تحديد كود الحساب المستلم بناءً على اسم الخدمة
                 int accountCode = service.service_name != null &&
                     (service.service_name.Contains("انترنت") ||
                      service.service_name.Contains("إنترنت"))
