@@ -484,7 +484,7 @@ namespace StarComplexAPI.Controllers
                 {
                     "موظف اداري" or "مدير" => "اداري",
                     "موظف امن" => "امن",
-                    _ => "غير محدد"
+                    _ => "غير محدد"  // ← أي job_title ثاني أو null
                 };
 
                 var payments = paymentsByEmp.GetValueOrDefault(a.employee_id, new());
