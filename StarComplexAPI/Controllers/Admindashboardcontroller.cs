@@ -6,9 +6,9 @@ using StarComplexAPI.Models;
 
 namespace StarComplexAPI.Controllers
 {
-    // ══════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════
     //  DTOs
-    // ══════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════
 
     public class DashboardKpiDto
     {
@@ -354,7 +354,8 @@ namespace StarComplexAPI.Controllers
 
         // ══════════════════════════════════════════════════════════
         //  حذف موظف مع الأرشفة
-        //  ✅ يخزن job_title في الأرشيف — يُستخدم لاحقاً لتحديد النوع
+        //  ✅ يفك ارتباط financial_payments و security_logs قبل الحذف
+        //     لتجنب خطأ Foreign Key Constraint
         // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id:int}")]
         public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
@@ -384,7 +385,7 @@ namespace StarComplexAPI.Controllers
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                // ── الخطوة 1: أرشفة باستخدام EF مباشرة بدل ExecuteSqlRaw ──
+                // ── الخطوة 1: أرشفة الموظف ──
                 var archiveEntry = new EmployeeArchive
                 {
                     employee_id = emp.employee_id,
@@ -397,13 +398,23 @@ namespace StarComplexAPI.Controllers
                 };
 
                 _db.EmployeesArchive.Add(archiveEntry);
-                await _db.SaveChangesAsync(); // ← لو فشل هنا يرمي exception فعلي
+                await _db.SaveChangesAsync();
 
                 // ── الخطوة 2: فك ارتباط blacklist ──
                 await _db.Database.ExecuteSqlRawAsync(
                     "UPDATE blacklist SET employee_id = 0 WHERE employee_id = {0}", id);
 
-                // ── الخطوة 3: حذف الموظف ──
+                // ── الخطوة 3: فك ارتباط financial_payments ✅ الإصلاح الرئيسي ──
+                // employee_id في financial_payments هو nullable لذا نضعه NULL
+                await _db.Database.ExecuteSqlRawAsync(
+                    "UPDATE financial_payments SET employee_id = NULL WHERE employee_id = {0}", id);
+
+                // ── الخطوة 4: فك ارتباط security_logs ✅ إصلاح إضافي ──
+                // إذا كان employee_id في security_logs NOT NULL استخدم 0 بدلاً من NULL
+                await _db.Database.ExecuteSqlRawAsync(
+                    "UPDATE security_logs SET employee_id = 0 WHERE employee_id = {0}", id);
+
+                // ── الخطوة 5: حذف الموظف ──
                 var rowsDeleted = await _db.Database.ExecuteSqlRawAsync(
                     "DELETE FROM employees WHERE employee_id = {0}", id);
 
@@ -432,8 +443,9 @@ namespace StarComplexAPI.Controllers
                 return StatusCode(500, new { message = $"فشل العملية: {ex.Message}" });
             }
         }
+
         // ══════════════════════════════════════════════════════════
-        //  الأرشيف — النوع يُحدَّد من job_title المخزون
+        //  الأرشيف
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
@@ -471,12 +483,11 @@ namespace StarComplexAPI.Controllers
 
             var result = archived.Select(a =>
             {
-                // ✅ النوع من job_title المحفوظ في الأرشيف
                 string empType = a.job_title switch
                 {
                     "موظف اداري" or "مدير" => "اداري",
                     "موظف امن" => "امن",
-                    _ => "غير محدد"  // ← أي job_title ثاني أو null
+                    _ => "غير محدد"
                 };
 
                 var payments = paymentsByEmp.GetValueOrDefault(a.employee_id, new());
@@ -555,7 +566,6 @@ namespace StarComplexAPI.Controllers
                 .OrderByDescending(s => s.created_at)
                 .ToListAsync();
 
-            // ✅ النوع من job_title المحفوظ في الأرشيف
             string empType = a.job_title switch
             {
                 "موظف اداري" or "مدير" => "اداري",
