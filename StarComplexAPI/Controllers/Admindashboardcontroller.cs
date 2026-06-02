@@ -369,7 +369,6 @@ namespace StarComplexAPI.Controllers
             if (emp == null)
                 return NotFound(new { message = "الموظف غير موجود" });
 
-            // تحديد النوع من job_title قبل الحذف
             string empType = emp.job_title switch
             {
                 "موظف اداري" or "مدير" => "اداري",
@@ -386,18 +385,17 @@ namespace StarComplexAPI.Controllers
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                // ── الخطوة 1: أرشفة الموظف (job_title محفوظ = مصدر النوع لاحقاً) ──
+                // ── الخطوة 1: أرشفة الموظف (بدون phone_number) ──
                 await _db.Database.ExecuteSqlRawAsync(@"
-                    INSERT INTO employees_archive
-                        (employee_id, first_name, second_name, third_name,
-                         job_title, phone_number, archived_at)
-                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
+            INSERT INTO employees_archive
+                (employee_id, first_name, second_name, third_name,
+                 job_title, archived_at)
+            VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
                     emp.employee_id,
                     (object?)emp.first_name ?? DBNull.Value,
                     (object?)emp.second_name ?? DBNull.Value,
                     (object?)emp.third_name ?? DBNull.Value,
                     (object?)emp.job_title ?? DBNull.Value,
-                    (object?)emp.phone_number ?? DBNull.Value,
                     DateTime.Now);
 
                 var archiveId = await _db.EmployeesArchive
@@ -439,7 +437,6 @@ namespace StarComplexAPI.Controllers
                 return StatusCode(500, new { message = $"فشل العملية: {ex.Message}" });
             }
         }
-
         // ══════════════════════════════════════════════════════════
         //  الأرشيف — النوع يُحدَّد من job_title المخزون
         // ══════════════════════════════════════════════════════════
