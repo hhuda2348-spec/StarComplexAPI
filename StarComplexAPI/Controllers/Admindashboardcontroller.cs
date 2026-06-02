@@ -76,24 +76,15 @@ namespace StarComplexAPI.Controllers
         public string? JobTitle { get; set; }
         public string? PhoneNumber { get; set; }
         public DateTime ArchivedAt { get; set; }
-        public int FinancialRecordsCount { get; set; }
-        public List<ArchivedFinancialRecordDto> FinancialRecords { get; set; } = new();
-    }
-
-    public class ArchivedFinancialRecordDto
-    {
-        public int PaymentId { get; set; }
-        public int UnitId { get; set; }
-        public string ServiceName { get; set; } = string.Empty;
-        public string TotalFee { get; set; } = string.Empty;
-        public decimal TotalFeeRaw { get; set; }
-        public string PaymentDate { get; set; } = string.Empty;
-        public string PaymentMethod { get; set; } = string.Empty;
     }
 
     // ══════════════════════════════════════════════════════════════
     //  Request DTOs
     // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// إضافة للقائمة السوداء — PersonName*, EmployeeId*, Reason (اختياري)
+    /// </summary>
     public class AddBlacklistRequest
     {
         public string PersonName { get; set; } = string.Empty;
@@ -101,6 +92,9 @@ namespace StarComplexAPI.Controllers
         public string? Reason { get; set; }
     }
 
+    /// <summary>
+    /// إضافة موظف — EmployeeCode*, FirstName*, وباقي الحقول اختيارية
+    /// </summary>
     public class AddEmployeeRequest
     {
         public string EmployeeCode { get; set; } = string.Empty;
@@ -109,6 +103,8 @@ namespace StarComplexAPI.Controllers
         public string? ThirdName { get; set; }
         public string? JobTitle { get; set; }
         public string? PhoneNumber { get; set; }
+        public string? NationalIdFrontPath { get; set; }
+        public string? NationalIdBackPath { get; set; }
     }
 
     public class AddResidentRequest
@@ -148,14 +144,6 @@ namespace StarComplexAPI.Controllers
 
         public AdminDashboardController(StarComplexContext db) => _db = db;
 
-        // ── Helper: آمن لـ decimal? ──
-        private static string FormatFee(decimal? fee)
-            => fee.GetValueOrDefault().ToString("N0") + " د.ع";
-
-        // ── Helper: آمن لـ Dictionary ──
-        private static string GetServiceName(Dictionary<int, string> map, int id)
-            => map.TryGetValue(id, out var name) ? name : "—";
-
         // ── Dashboard كامل ──
         [HttpGet("full/{employeeId}")]
         public async Task<ActionResult<DashboardResponseDto>> GetFullDashboard(int employeeId)
@@ -177,11 +165,12 @@ namespace StarComplexAPI.Controllers
             var openMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "مفتوح");
             var inProgress = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
 
-            var totalRevenueRaw = await _db.FinancialPayments.SumAsync(p => (decimal?)p.total_service_fee) ?? 0m;
+            // ✅ إصلاح 1: تحويل النتيجة إلى decimal حتى تدعم ToString("N0")
+            var totalRevenueRaw = (decimal)await _db.FinancialPayments.SumAsync(p => p.total_service_fee);
             var now = DateTime.Now;
-            var monthlyRevenueRaw = await _db.FinancialPayments
+            var monthlyRevenueRaw = (decimal)await _db.FinancialPayments
                 .Where(p => p.payment_date.Year == now.Year && p.payment_date.Month == now.Month)
-                .SumAsync(p => (decimal?)p.total_service_fee) ?? 0m;
+                .SumAsync(p => p.total_service_fee);
 
             var arabicMonths = new[] {
                 "يناير","فبراير","مارس","أبريل","مايو","يونيو",
@@ -202,19 +191,26 @@ namespace StarComplexAPI.Controllers
                 topServiceCount = $"{topServiceData.Count} طلب";
             }
 
+            // ✅ إصلاح 2: تحديد النوع صراحةً لتفادي مشكلة type inference مع GetValueOrDefault
             var serviceMap = await _db.FinancialConstants
-                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
+                .ToDictionaryAsync<FinancialConstant, int, string>(
+                    s => s.service_id,
+                    s => s.service_name ?? string.Empty
+                );
 
             var recentPaymentsRaw = await _db.FinancialPayments
                 .OrderByDescending(p => p.payment_date).Take(10).ToListAsync();
 
+            // ✅ إصلاح 3: معالجة service_id بشكل آمن في حال كان nullable
             var recentPayments = recentPaymentsRaw.Select(p => new DashboardPaymentItemDto
             {
                 PaymentId = $"#{p.payment_id}",
                 UnitId = p.unit_id.ToString(),
-                ServiceName = GetServiceName(serviceMap, (int)p.service_id),
-                TotalFeeRaw = p.total_service_fee.GetValueOrDefault(),
-                TotalFee = FormatFee(p.total_service_fee),
+                ServiceName = p.service_id is int pSid
+                    ? serviceMap.GetValueOrDefault(pSid, "—")
+                    : "—",
+                TotalFeeRaw = (decimal)p.total_service_fee,
+                TotalFee = ((decimal)p.total_service_fee).ToString("N0") + " د.ع",
                 PaymentDateRaw = p.payment_date,
                 PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
                 PaymentMethod = p.payment_method
@@ -227,7 +223,9 @@ namespace StarComplexAPI.Controllers
             {
                 RequestId = $"#{m.request_id}",
                 UnitId = m.unit_id.ToString(),
-                ServiceName = GetServiceName(serviceMap, m.service_id),
+                ServiceName = m.service_id is int mSid
+                    ? serviceMap.GetValueOrDefault(mSid, "—")
+                    : "—",
                 RequestDateRaw = m.request_date,
                 RequestDate = m.request_date.ToString("yyyy/MM/dd"),
                 Status = m.request_status ?? "غير محدد",
@@ -280,6 +278,8 @@ namespace StarComplexAPI.Controllers
                 e.third_name,
                 e.job_title,
                 e.phone_number,
+                e.national_id_front_path,
+                e.national_id_back_path,
                 full_name = $"{e.first_name} {e.second_name} {e.third_name}".Trim()
             }).ToListAsync());
         }
@@ -300,7 +300,9 @@ namespace StarComplexAPI.Controllers
                 second_name = NullIfEmpty(req.SecondName),
                 third_name = NullIfEmpty(req.ThirdName),
                 job_title = NullIfEmpty(req.JobTitle),
-                phone_number = NullIfEmpty(req.PhoneNumber)
+                phone_number = NullIfEmpty(req.PhoneNumber),
+                national_id_front_path = NullIfEmpty(req.NationalIdFrontPath),
+                national_id_back_path = NullIfEmpty(req.NationalIdBackPath)
             };
 
             _db.Employees.Add(emp);
@@ -312,22 +314,21 @@ namespace StarComplexAPI.Controllers
                 employee_id = emp.employee_id,
                 employee_code = emp.employee_code,
                 full_name = string.Join(" ", new[] { emp.first_name, emp.second_name, emp.third_name }
-                                    .Where(n => !string.IsNullOrWhiteSpace(n)))
+                                  .Where(n => !string.IsNullOrWhiteSpace(n)))
             });
         }
 
+        /// <summary>
+        /// حذف موظف مع أرشفة بياناته تلقائياً في جدول employees_archive
+        /// يحتفظ بالسجلات المالية والقائمة السوداء المرتبطة بالموظف قبل الحذف
+        /// </summary>
         [HttpDelete("employees/{id}")]
-        public async Task<ActionResult> DeleteEmployee(int id, [FromQuery] int requestingEmployeeId)
+        public async Task<ActionResult> DeleteEmployee(int id)
         {
-            if (id == requestingEmployeeId)
-                return BadRequest(new { message = "لا يمكنك حذف حسابك الخاص" });
-
             var emp = await _db.Employees.FindAsync(id);
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
-            var financialCount = await _db.FinancialPayments
-                .CountAsync(p => p.employee_id == id);
-
+            // ── أرشفة الموظف قبل حذفه ──
             var archive = new EmployeeArchive
             {
                 employee_id = emp.employee_id,
@@ -339,55 +340,33 @@ namespace StarComplexAPI.Controllers
                 archived_at = DateTime.Now
             };
             _db.EmployeesArchive.Add(archive);
-            await _db.SaveChangesAsync();
 
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0");
+            // ── تحديث السجلات المالية لتشير للأرشيف بدلاً من حذفها ──
+            // (نبقيها كما هي — الـ FK محدود بالأرشيف، ليس بجدول الموظفين)
+
             _db.Employees.Remove(emp);
             await _db.SaveChangesAsync();
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1");
 
             return Ok(new
             {
                 message = "تم حذف الموظف وأرشفة بياناته بنجاح",
-                archive_id = archive.archive_id,
-                financial_records_kept = financialCount
+                archive_id = archive.archive_id
             });
         }
 
         // ══════════════════════════════════════════════════════════
-        //  الأرشيف
+        //  الأرشيف — employees_archive
         // ══════════════════════════════════════════════════════════
 
+        /// <summary>
+        /// جلب جميع الموظفين المؤرشفين مرتبين من الأحدث للأقدم
+        /// </summary>
         [HttpGet("employees/archive")]
         public async Task<ActionResult> GetArchivedEmployees()
         {
             var archived = await _db.EmployeesArchive
                 .OrderByDescending(a => a.archived_at)
-                .ToListAsync();
-
-            var serviceMap = await _db.FinancialConstants
-                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-
-            var result = new List<ArchivedEmployeeDto>();
-            foreach (var a in archived)
-            {
-                var payments = await _db.FinancialPayments
-                    .Where(p => p.employee_id == a.employee_id)
-                    .OrderByDescending(p => p.payment_date)
-                    .ToListAsync();
-
-                var financialRecords = payments.Select(p => new ArchivedFinancialRecordDto
-                {
-                    PaymentId = p.payment_id,
-                    UnitId = p.unit_id,
-                    ServiceName = GetServiceName(serviceMap, (int)p.service_id),
-                    TotalFeeRaw = p.total_service_fee.GetValueOrDefault(),
-                    TotalFee = FormatFee(p.total_service_fee),
-                    PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
-                    PaymentMethod = p.payment_method
-                }).ToList();
-
-                result.Add(new ArchivedEmployeeDto
+                .Select(a => new ArchivedEmployeeDto
                 {
                     ArchiveId = a.archive_id,
                     EmployeeId = a.employee_id,
@@ -397,61 +376,33 @@ namespace StarComplexAPI.Controllers
                     ThirdName = a.third_name,
                     JobTitle = a.job_title,
                     PhoneNumber = a.phone_number,
-                    ArchivedAt = a.archived_at,
-                    FinancialRecordsCount = financialRecords.Count,
-                    FinancialRecords = financialRecords
-                });
-            }
+                    ArchivedAt = a.archived_at
+                })
+                .ToListAsync();
 
-            return Ok(result);
+            return Ok(archived);
         }
 
+        /// <summary>
+        /// جلب سجل أرشيف واحد بالتفصيل
+        /// </summary>
         [HttpGet("employees/archive/{archiveId}")]
         public async Task<ActionResult> GetArchivedEmployee(int archiveId)
         {
             var a = await _db.EmployeesArchive.FindAsync(archiveId);
             if (a == null) return NotFound(new { message = "السجل غير موجود في الأرشيف" });
 
-            var serviceMap = await _db.FinancialConstants
-                .ToDictionaryAsync(s => s.service_id, s => s.service_name);
-
-            var financialRecords = await _db.FinancialPayments
-                .Where(p => p.employee_id == a.employee_id)
-                .Select(p => new
-                {
-                    p.payment_id,
-                    p.unit_id,
-                    p.service_id,
-                    p.total_service_fee,
-                    p.payment_date,
-                    p.payment_method
-                })
-                .ToListAsync();
-
-            var mappedRecords = financialRecords.Select(p => new
+            return Ok(new ArchivedEmployeeDto
             {
-                p.payment_id,
-                p.unit_id,
-                service_name = GetServiceName(serviceMap, (int)p.service_id),
-                total_fee = FormatFee(p.total_service_fee),
-                total_fee_raw = p.total_service_fee.GetValueOrDefault(),
-                payment_date = p.payment_date.ToString("yyyy/MM/dd"),
-                p.payment_method
-            }).ToList();
-
-            return Ok(new
-            {
-                archiveId = a.archive_id,
-                employeeId = a.employee_id,
-                fullName = $"{a.first_name} {a.second_name} {a.third_name}".Trim(),
-                firstName = a.first_name,
-                secondName = a.second_name,
-                thirdName = a.third_name,
-                jobTitle = a.job_title,
-                phoneNumber = a.phone_number,
-                archivedAt = a.archived_at,
-                financialRecords = mappedRecords,
-                financialCount = mappedRecords.Count
+                ArchiveId = a.archive_id,
+                EmployeeId = a.employee_id,
+                FullName = $"{a.first_name} {a.second_name} {a.third_name}".Trim(),
+                FirstName = a.first_name,
+                SecondName = a.second_name,
+                ThirdName = a.third_name,
+                JobTitle = a.job_title,
+                PhoneNumber = a.phone_number,
+                ArchivedAt = a.archived_at
             });
         }
 
@@ -462,35 +413,14 @@ namespace StarComplexAPI.Controllers
         [HttpGet("blacklist")]
         public async Task<ActionResult> GetBlacklist()
         {
-            var list = await _db.Blacklist.ToListAsync();
-
-            var employeeIds = list.Select(b => b.employee_id).Distinct().ToList();
-            var employees = await _db.Employees
-                .Where(e => employeeIds.Contains(e.employee_id))
-                .ToListAsync();
-            var archivedEmployees = await _db.EmployeesArchive
-                .Where(a => employeeIds.Contains(a.employee_id))
-                .ToListAsync();
-
-            var employeeNameMap = employees.ToDictionary(
-                e => e.employee_id,
-                e => $"{e.first_name} {e.second_name} {e.third_name}".Trim());
-
-            foreach (var a in archivedEmployees)
-                if (!employeeNameMap.ContainsKey(a.employee_id))
-                    employeeNameMap[a.employee_id] = $"{a.first_name} {a.second_name} {a.third_name}".Trim() + " (مؤرشف)";
-
-            return Ok(list.Select(b => new
+            return Ok(await _db.Blacklist.Select(b => new
             {
                 b.blacklist_id,
                 b.person_name,
                 b.employee_id,
-                added_by_name = employeeNameMap.TryGetValue(b.employee_id, out var empName)
-                    ? empName
-                    : "موظف غير معروف",
                 b.added_date,
                 b.reason
-            }));
+            }).ToListAsync());
         }
 
         [HttpPost("blacklist")]
