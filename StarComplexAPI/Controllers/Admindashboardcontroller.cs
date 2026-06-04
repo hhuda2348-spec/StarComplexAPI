@@ -299,16 +299,56 @@ namespace StarComplexAPI.Controllers
             });
         }
 
+        // ══════════════════════════════════════════════════════════
+        //  حذف الموظف مع الأرشفة التلقائية
+        // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id)
         {
             var emp = await _db.Employees.FindAsync(id);
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
+            // ✅ أرشف الموظف قبل الحذف
+            var archive = new EmployeeArchive
+            {
+                employee_id = emp.employee_id,
+                first_name = emp.first_name,
+                second_name = emp.second_name,
+                third_name = emp.third_name,
+                job_title = emp.job_title,
+                phone_number = emp.phone_number,
+                archived_at = DateTime.Now
+            };
+            _db.EmployeesArchive.Add(archive);
+
+            // ✅ ثم احذف الموظف
             _db.Employees.Remove(emp);
             await _db.SaveChangesAsync();
 
-            return Ok(new { message = "تم حذف الموظف بنجاح" });
+            return Ok(new { message = "تم حذف الموظف وأرشفته بنجاح" });
+        }
+
+        // ══════════════════════════════════════════════════════════
+        //  الموظفون المؤرشفون
+        // ══════════════════════════════════════════════════════════
+        [HttpGet("employees/archived")]
+        public async Task<ActionResult> GetArchivedEmployees()
+        {
+            return Ok(await _db.EmployeesArchive
+                .OrderByDescending(a => a.archived_at)
+                .Select(a => new
+                {
+                    a.archive_id,
+                    a.employee_id,
+                    a.first_name,
+                    a.second_name,
+                    a.third_name,
+                    a.job_title,
+                    a.phone_number,
+                    a.archived_at,
+                    full_name = $"{a.first_name} {a.second_name} {a.third_name}".Trim()
+                })
+                .ToListAsync());
         }
 
         // ══════════════════════════════════════════════════════════
