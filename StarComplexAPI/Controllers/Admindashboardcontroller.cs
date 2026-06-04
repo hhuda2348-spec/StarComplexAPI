@@ -63,22 +63,6 @@ namespace StarComplexAPI.Controllers
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  Archived Employee DTO
-    // ══════════════════════════════════════════════════════════════
-    public class ArchivedEmployeeDto
-    {
-        public int ArchiveId { get; set; }
-        public int EmployeeId { get; set; }
-        public string? FullName { get; set; }
-        public string? FirstName { get; set; }
-        public string? SecondName { get; set; }
-        public string? ThirdName { get; set; }
-        public string? JobTitle { get; set; }
-        public string? PhoneNumber { get; set; }
-        public DateTime ArchivedAt { get; set; }
-    }
-
-    // ══════════════════════════════════════════════════════════════
     //  Request DTOs
     // ══════════════════════════════════════════════════════════════
 
@@ -165,7 +149,6 @@ namespace StarComplexAPI.Controllers
             var openMaintenance = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "مفتوح");
             var inProgress = await _db.MaintenanceRequests.CountAsync(m => m.request_status == "قيد التنفيذ");
 
-            // ✅ إصلاح 1: تحويل النتيجة إلى decimal حتى تدعم ToString("N0")
             var totalRevenueRaw = (decimal)await _db.FinancialPayments.SumAsync(p => p.total_service_fee);
             var now = DateTime.Now;
             var monthlyRevenueRaw = (decimal)await _db.FinancialPayments
@@ -191,7 +174,6 @@ namespace StarComplexAPI.Controllers
                 topServiceCount = $"{topServiceData.Count} طلب";
             }
 
-            // ✅ إصلاح 2: تحديد النوع صراحةً لتفادي مشكلة type inference مع GetValueOrDefault
             var serviceMap = await _db.FinancialConstants
                 .ToDictionaryAsync<FinancialConstant, int, string>(
                     s => s.service_id,
@@ -201,7 +183,6 @@ namespace StarComplexAPI.Controllers
             var recentPaymentsRaw = await _db.FinancialPayments
                 .OrderByDescending(p => p.payment_date).Take(10).ToListAsync();
 
-            // ✅ إصلاح 3: معالجة service_id بشكل آمن في حال كان nullable
             var recentPayments = recentPaymentsRaw.Select(p => new DashboardPaymentItemDto
             {
                 PaymentId = $"#{p.payment_id}",
@@ -318,92 +299,16 @@ namespace StarComplexAPI.Controllers
             });
         }
 
-        /// <summary>
-        /// حذف موظف مع أرشفة بياناته تلقائياً في جدول employees_archive
-        /// يحتفظ بالسجلات المالية والقائمة السوداء المرتبطة بالموظف قبل الحذف
-        /// </summary>
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id)
         {
             var emp = await _db.Employees.FindAsync(id);
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
-            // ── أرشفة الموظف قبل حذفه ──
-            var archive = new EmployeeArchive
-            {
-                employee_id = emp.employee_id,
-                first_name = emp.first_name,
-                second_name = emp.second_name,
-                third_name = emp.third_name,
-                job_title = emp.job_title,
-                phone_number = emp.phone_number,
-                archived_at = DateTime.Now
-            };
-            _db.EmployeesArchive.Add(archive);
-
-            // ── تحديث السجلات المالية لتشير للأرشيف بدلاً من حذفها ──
-            // (نبقيها كما هي — الـ FK محدود بالأرشيف، ليس بجدول الموظفين)
-
             _db.Employees.Remove(emp);
             await _db.SaveChangesAsync();
 
-            return Ok(new
-            {
-                message = "تم حذف الموظف وأرشفة بياناته بنجاح",
-                archive_id = archive.archive_id
-            });
-        }
-
-        // ══════════════════════════════════════════════════════════
-        //  الأرشيف — employees_archive
-        // ══════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// جلب جميع الموظفين المؤرشفين مرتبين من الأحدث للأقدم
-        /// </summary>
-        [HttpGet("employees/archive")]
-        public async Task<ActionResult> GetArchivedEmployees()
-        {
-            var archived = await _db.EmployeesArchive
-                .OrderByDescending(a => a.archived_at)
-                .Select(a => new ArchivedEmployeeDto
-                {
-                    ArchiveId = a.archive_id,
-                    EmployeeId = a.employee_id,
-                    FullName = $"{a.first_name} {a.second_name} {a.third_name}".Trim(),
-                    FirstName = a.first_name,
-                    SecondName = a.second_name,
-                    ThirdName = a.third_name,
-                    JobTitle = a.job_title,
-                    PhoneNumber = a.phone_number,
-                    ArchivedAt = a.archived_at
-                })
-                .ToListAsync();
-
-            return Ok(archived);
-        }
-
-        /// <summary>
-        /// جلب سجل أرشيف واحد بالتفصيل
-        /// </summary>
-        [HttpGet("employees/archive/{archiveId}")]
-        public async Task<ActionResult> GetArchivedEmployee(int archiveId)
-        {
-            var a = await _db.EmployeesArchive.FindAsync(archiveId);
-            if (a == null) return NotFound(new { message = "السجل غير موجود في الأرشيف" });
-
-            return Ok(new ArchivedEmployeeDto
-            {
-                ArchiveId = a.archive_id,
-                EmployeeId = a.employee_id,
-                FullName = $"{a.first_name} {a.second_name} {a.third_name}".Trim(),
-                FirstName = a.first_name,
-                SecondName = a.second_name,
-                ThirdName = a.third_name,
-                JobTitle = a.job_title,
-                PhoneNumber = a.phone_number,
-                ArchivedAt = a.archived_at
-            });
+            return Ok(new { message = "تم حذف الموظف بنجاح" });
         }
 
         // ══════════════════════════════════════════════════════════
