@@ -11,7 +11,7 @@ public class Blacklist
     public string? person_name { get; set; }
 
     [Required]
-    public int employee_id { get; set; }
+    public int? employee_id { get; set; }
 
     [DataType(DataType.DateTime)]
     public DateTime added_date { get; set; } = DateTime.Now;
