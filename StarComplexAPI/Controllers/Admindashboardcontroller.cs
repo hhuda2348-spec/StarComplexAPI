@@ -319,7 +319,7 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  حذف الموظف — أرشفة ثم حذف
+        //  حذف الموظف — بدون تعديل
         // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id)
@@ -383,17 +383,16 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  تفاصيل الموظف المؤرشف — ADO.NET مباشرة بدون تعديل Models
-        //  ✅ يجلب blacklist + payments باسم الموظف عبر Raw SQL
+        //  تفاصيل الموظف المؤرشف
+        //  ✅ إذا employee_id موجود → بحث مباشر بالـ ID
+        //  ✅ إذا employee_id = NULL → بحث بالاسم للحصول على الـ ID
+        //     من جداول blacklist أو financial_payments
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archived/{archiveId}/details")]
         public async Task<ActionResult<ArchivedEmployeeDetailDto>> GetArchivedEmployeeDetails(int archiveId)
         {
             var archive = await _db.EmployeesArchive.FindAsync(archiveId);
             if (archive == null) return NotFound(new { message = "السجل غير موجود" });
-
-            // employee_id المحفوظ وقت الأرشفة — يبقى ثابتاً حتى بعد حذف الموظف
-            var empId = archive.employee_id;
 
             var blacklistRecords = new List<ArchivedBlacklistItemDto>();
             var paymentRecords = new List<ArchivedPaymentItemDto>();
@@ -404,70 +403,156 @@ namespace StarComplexAPI.Controllers
             {
                 await conn.OpenAsync();
 
-                // ── القائمة السوداء باسم الموظف المؤرشف ──
-                using (var cmd = conn.CreateCommand())
+                // ── خطوة 1: حدد الـ empId المستخدم في البحث ──
+                // إذا employee_id موجود في الأرشيف استخدمه مباشرة
+                // إذا NULL ابحث عنه بالاسم في جدول blacklist أو financial_payments
+                int? resolvedEmpId = archive.employee_id;
+
+                if (!resolvedEmpId.HasValue)
                 {
-                    cmd.CommandText = @"
-                        SELECT
-                            b.blacklist_id,
-                            COALESCE(b.person_name, '—')                    AS person_name,
-                            COALESCE(b.reason, '—')                         AS reason,
-                            DATE_FORMAT(b.added_date, '%Y/%m/%d')           AS added_date
-                        FROM blacklist b
-                        WHERE b.employee_id = @empId
-                        ORDER BY b.added_date DESC";
-
-                    var p = cmd.CreateParameter();
-                    p.ParameterName = "@empId";
-                    p.Value = (object?)empId ?? DBNull.Value;
-                    cmd.Parameters.Add(p);
-
-                    using var reader = await cmd.ExecuteReaderAsync();
-                    while (await reader.ReadAsync())
+                    using (var cmd = conn.CreateCommand())
                     {
-                        blacklistRecords.Add(new ArchivedBlacklistItemDto
+                        // ابحث في blacklist أولاً عن موظف له نفس الاسم المحفوظ في الأرشيف
+                        // عن طريق ربط employees_archive بـ blacklist عبر الاسم
+                        cmd.CommandText = @"
+                            SELECT b.employee_id
+                            FROM blacklist b
+                            INNER JOIN employees e ON b.employee_id = e.employee_id
+                            WHERE TRIM(CONCAT(
+                                      COALESCE(e.first_name, ''), ' ',
+                                      COALESCE(e.second_name, ''), ' ',
+                                      COALESCE(e.third_name, '')
+                                  )) = TRIM(CONCAT(
+                                      COALESCE(@fn, ''), ' ',
+                                      COALESCE(@sn, ''), ' ',
+                                      COALESCE(@tn, '')
+                                  ))
+                            LIMIT 1";
+
+                        void AddP(string name, object? val)
                         {
-                            BlacklistId = reader.GetInt32(0),
-                            PersonName = reader.GetString(1),
-                            Reason = reader.GetString(2),
-                            AddedDate = reader.GetString(3)
-                        });
+                            var p = cmd.CreateParameter();
+                            p.ParameterName = name;
+                            p.Value = val ?? DBNull.Value;
+                            cmd.Parameters.Add(p);
+                        }
+
+                        AddP("@fn", archive.first_name);
+                        AddP("@sn", archive.second_name);
+                        AddP("@tn", archive.third_name);
+
+                        var result = await cmd.ExecuteScalarAsync();
+                        if (result != null && result != DBNull.Value)
+                            resolvedEmpId = Convert.ToInt32(result);
                     }
                 }
 
-                // ── السجلات المالية باسم الموظف المؤرشف ──
-                using (var cmd = conn.CreateCommand())
+                if (!resolvedEmpId.HasValue)
                 {
-                    cmd.CommandText = @"
-                        SELECT
-                            p.payment_id,
-                            p.unit_id,
-                            COALESCE(s.service_name, '—')                   AS service_name,
-                            CONCAT(FORMAT(p.total_service_fee, 0), ' د.ع') AS total_fee,
-                            DATE_FORMAT(p.payment_date, '%Y/%m/%d')         AS payment_date,
-                            COALESCE(p.payment_method, '—')                 AS payment_method
-                        FROM financial_payments p
-                        LEFT JOIN financial_constants s ON p.service_id = s.service_id
-                        WHERE p.employee_id = @empId
-                        ORDER BY p.payment_date DESC";
-
-                    var p = cmd.CreateParameter();
-                    p.ParameterName = "@empId";
-                    p.Value = (object?)empId ?? DBNull.Value;
-                    cmd.Parameters.Add(p);
-
-                    using var reader = await cmd.ExecuteReaderAsync();
-                    while (await reader.ReadAsync())
+                    // جرب financial_payments إذا ما لقينا في blacklist
+                    using (var cmd = conn.CreateCommand())
                     {
-                        paymentRecords.Add(new ArchivedPaymentItemDto
+                        cmd.CommandText = @"
+                            SELECT p.employee_id
+                            FROM financial_payments p
+                            INNER JOIN employees e ON p.employee_id = e.employee_id
+                            WHERE TRIM(CONCAT(
+                                      COALESCE(e.first_name, ''), ' ',
+                                      COALESCE(e.second_name, ''), ' ',
+                                      COALESCE(e.third_name, '')
+                                  )) = TRIM(CONCAT(
+                                      COALESCE(@fn, ''), ' ',
+                                      COALESCE(@sn, ''), ' ',
+                                      COALESCE(@tn, '')
+                                  ))
+                            LIMIT 1";
+
+                        void AddP(string name, object? val)
                         {
-                            PaymentId = reader.GetInt32(0),
-                            UnitId = reader.GetInt32(1),
-                            ServiceName = reader.GetString(2),
-                            TotalFee = reader.GetString(3),
-                            PaymentDate = reader.GetString(4),
-                            PaymentMethod = reader.GetString(5)
-                        });
+                            var p = cmd.CreateParameter();
+                            p.ParameterName = name;
+                            p.Value = val ?? DBNull.Value;
+                            cmd.Parameters.Add(p);
+                        }
+
+                        AddP("@fn", archive.first_name);
+                        AddP("@sn", archive.second_name);
+                        AddP("@tn", archive.third_name);
+
+                        var result = await cmd.ExecuteScalarAsync();
+                        if (result != null && result != DBNull.Value)
+                            resolvedEmpId = Convert.ToInt32(result);
+                    }
+                }
+
+                // ── خطوة 2: جلب السجلات بالـ ID المحدد ──
+                if (resolvedEmpId.HasValue)
+                {
+                    // ── القائمة السوداء ──
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT
+                                b.blacklist_id,
+                                COALESCE(b.person_name, '—')            AS person_name,
+                                COALESCE(b.reason, '—')                 AS reason,
+                                DATE_FORMAT(b.added_date, '%Y/%m/%d')   AS added_date
+                            FROM blacklist b
+                            WHERE b.employee_id = @empId
+                            ORDER BY b.added_date DESC";
+
+                        var p = cmd.CreateParameter();
+                        p.ParameterName = "@empId";
+                        p.Value = resolvedEmpId.Value;
+                        cmd.Parameters.Add(p);
+
+                        using var reader = await cmd.ExecuteReaderAsync();
+                        while (await reader.ReadAsync())
+                        {
+                            blacklistRecords.Add(new ArchivedBlacklistItemDto
+                            {
+                                BlacklistId = reader.GetInt32(0),
+                                PersonName = reader.GetString(1),
+                                Reason = reader.GetString(2),
+                                AddedDate = reader.GetString(3)
+                            });
+                        }
+                    }
+
+                    // ── السجلات المالية ──
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT
+                                p.payment_id,
+                                p.unit_id,
+                                COALESCE(s.service_name, '—')                   AS service_name,
+                                CONCAT(FORMAT(p.total_service_fee, 0), ' د.ع') AS total_fee,
+                                DATE_FORMAT(p.payment_date, '%Y/%m/%d')         AS payment_date,
+                                COALESCE(p.payment_method, '—')                 AS payment_method
+                            FROM financial_payments p
+                            LEFT JOIN financial_constants s ON p.service_id = s.service_id
+                            WHERE p.employee_id = @empId
+                            ORDER BY p.payment_date DESC";
+
+                        var p = cmd.CreateParameter();
+                        p.ParameterName = "@empId";
+                        p.Value = resolvedEmpId.Value;
+                        cmd.Parameters.Add(p);
+
+                        using var reader = await cmd.ExecuteReaderAsync();
+                        while (await reader.ReadAsync())
+                        {
+                            paymentRecords.Add(new ArchivedPaymentItemDto
+                            {
+                                PaymentId = reader.GetInt32(0),
+                                UnitId = reader.GetInt32(1),
+                                ServiceName = reader.GetString(2),
+                                TotalFee = reader.GetString(3),
+                                PaymentDate = reader.GetString(4),
+                                PaymentMethod = reader.GetString(5)
+                            });
+                        }
                     }
                 }
             }
