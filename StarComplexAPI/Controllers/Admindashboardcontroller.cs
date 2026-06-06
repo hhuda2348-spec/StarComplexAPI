@@ -66,7 +66,7 @@ namespace StarComplexAPI.Controllers
     public class ArchivedEmployeeDetailDto
     {
         public int ArchiveId { get; set; }
-        public int EmployeeId { get; set; }
+        public int? EmployeeId { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string JobTitle { get; set; } = string.Empty;
         public string PhoneNumber { get; set; } = string.Empty;
@@ -319,8 +319,7 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  حذف الموظف — أرشفة ثم حذف من employees فقط
-        //  ✅ Transaction يضمن إن الأرشفة والحذف يتمان معاً أو لا شيء
+        //  حذف الموظف — أرشفة ثم حذف
         // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id)
@@ -331,7 +330,6 @@ namespace StarComplexAPI.Controllers
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                // 1. انسخ بيانات الموظف للأرشيف
                 _db.EmployeesArchive.Add(new EmployeeArchive
                 {
                     employee_id = emp.employee_id,
@@ -344,9 +342,6 @@ namespace StarComplexAPI.Controllers
                 });
                 await _db.SaveChangesAsync();
 
-                // 2. احذف من جدول employees فقط
-                //    السجلات المرتبطة (blacklist, financial_payments, security_logs)
-                //    تبقى كما هي — employee_id يصير NULL تلقائياً (ON DELETE SET NULL)
                 _db.Employees.Remove(emp);
                 await _db.SaveChangesAsync();
 
@@ -365,7 +360,7 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  Archived Employees
+        //  Archived Employees — قائمة
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archived")]
         public async Task<ActionResult> GetArchivedEmployees()
@@ -388,8 +383,8 @@ namespace StarComplexAPI.Controllers
         }
 
         // ══════════════════════════════════════════════════════════
-        //  تفاصيل الموظف المؤرشف — Blacklist + Payments
-        //  ✅ يستخدم employee_id المحفوظ في الأرشيف وقت الحذف
+        //  تفاصيل الموظف المؤرشف — ADO.NET مباشرة بدون تعديل Models
+        //  ✅ يجلب blacklist + payments باسم الموظف عبر Raw SQL
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archived/{archiveId}/details")]
         public async Task<ActionResult<ArchivedEmployeeDetailDto>> GetArchivedEmployeeDetails(int archiveId)
@@ -400,40 +395,93 @@ namespace StarComplexAPI.Controllers
             // employee_id المحفوظ وقت الأرشفة — يبقى ثابتاً حتى بعد حذف الموظف
             var empId = archive.employee_id;
 
-            var blacklistRecords = await _db.Blacklist
-                .Where(b => b.employee_id == empId)
-                .Select(b => new ArchivedBlacklistItemDto
-                {
-                    BlacklistId = b.blacklist_id,
-                    PersonName = b.person_name ?? "—",
-                    Reason = b.reason ?? "—",
-                    AddedDate = b.added_date.ToString("yyyy/MM/dd")
-                })
-                .ToListAsync();
+            var blacklistRecords = new List<ArchivedBlacklistItemDto>();
+            var paymentRecords = new List<ArchivedPaymentItemDto>();
 
-            var paymentRecords = await (
-                from p in _db.FinancialPayments
-                where p.employee_id == empId
-                join s in _db.FinancialConstants
-                    on p.service_id equals s.service_id into sGroup
-                from s in sGroup.DefaultIfEmpty()
-                orderby p.payment_date descending
-                select new ArchivedPaymentItemDto
+            var conn = _db.Database.GetDbConnection();
+
+            try
+            {
+                await conn.OpenAsync();
+
+                // ── القائمة السوداء باسم الموظف المؤرشف ──
+                using (var cmd = conn.CreateCommand())
                 {
-                    PaymentId = p.payment_id,
-                    UnitId = p.unit_id,
-                    ServiceName = s != null ? s.service_name : "—",
-                    TotalFee = ((decimal)p.total_service_fee).ToString("N0") + " د.ع",
-                    PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
-                    PaymentMethod = p.payment_method ?? "—"
+                    cmd.CommandText = @"
+                        SELECT
+                            b.blacklist_id,
+                            COALESCE(b.person_name, '—')                    AS person_name,
+                            COALESCE(b.reason, '—')                         AS reason,
+                            DATE_FORMAT(b.added_date, '%Y/%m/%d')           AS added_date
+                        FROM blacklist b
+                        WHERE b.employee_id = @empId
+                        ORDER BY b.added_date DESC";
+
+                    var p = cmd.CreateParameter();
+                    p.ParameterName = "@empId";
+                    p.Value = (object?)empId ?? DBNull.Value;
+                    cmd.Parameters.Add(p);
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        blacklistRecords.Add(new ArchivedBlacklistItemDto
+                        {
+                            BlacklistId = reader.GetInt32(0),
+                            PersonName = reader.GetString(1),
+                            Reason = reader.GetString(2),
+                            AddedDate = reader.GetString(3)
+                        });
+                    }
                 }
-            ).ToListAsync();
+
+                // ── السجلات المالية باسم الموظف المؤرشف ──
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT
+                            p.payment_id,
+                            p.unit_id,
+                            COALESCE(s.service_name, '—')                   AS service_name,
+                            CONCAT(FORMAT(p.total_service_fee, 0), ' د.ع') AS total_fee,
+                            DATE_FORMAT(p.payment_date, '%Y/%m/%d')         AS payment_date,
+                            COALESCE(p.payment_method, '—')                 AS payment_method
+                        FROM financial_payments p
+                        LEFT JOIN financial_constants s ON p.service_id = s.service_id
+                        WHERE p.employee_id = @empId
+                        ORDER BY p.payment_date DESC";
+
+                    var p = cmd.CreateParameter();
+                    p.ParameterName = "@empId";
+                    p.Value = (object?)empId ?? DBNull.Value;
+                    cmd.Parameters.Add(p);
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        paymentRecords.Add(new ArchivedPaymentItemDto
+                        {
+                            PaymentId = reader.GetInt32(0),
+                            UnitId = reader.GetInt32(1),
+                            ServiceName = reader.GetString(2),
+                            TotalFee = reader.GetString(3),
+                            PaymentDate = reader.GetString(4),
+                            PaymentMethod = reader.GetString(5)
+                        });
+                    }
+                }
+            }
+            finally
+            {
+                await conn.CloseAsync();
+            }
 
             return Ok(new ArchivedEmployeeDetailDto
             {
                 ArchiveId = archive.archive_id,
-                EmployeeId = archive.employee_id ?? 0,
-                FullName = string.Join(" ", new[] { archive.first_name, archive.second_name, archive.third_name }
+                EmployeeId = archive.employee_id,
+                FullName = string.Join(" ", new[]
+                                       { archive.first_name, archive.second_name, archive.third_name }
                                        .Where(n => !string.IsNullOrWhiteSpace(n))),
                 JobTitle = archive.job_title ?? "—",
                 PhoneNumber = archive.phone_number ?? "—",
