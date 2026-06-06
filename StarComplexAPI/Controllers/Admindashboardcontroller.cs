@@ -62,37 +62,6 @@ namespace StarComplexAPI.Controllers
         public List<DashboardMaintenanceItemDto> RecentMaintenance { get; set; } = new();
     }
 
-    // ── DTOs تفاصيل الموظف المؤرشف ──
-    public class ArchivedEmployeeDetailDto
-    {
-        public int ArchiveId { get; set; }
-        public int? EmployeeId { get; set; }
-        public string FullName { get; set; } = string.Empty;
-        public string JobTitle { get; set; } = string.Empty;
-        public string PhoneNumber { get; set; } = string.Empty;
-        public string ArchivedAt { get; set; } = string.Empty;
-        public List<ArchivedBlacklistItemDto> BlacklistRecords { get; set; } = new();
-        public List<ArchivedPaymentItemDto> PaymentRecords { get; set; } = new();
-    }
-
-    public class ArchivedBlacklistItemDto
-    {
-        public int BlacklistId { get; set; }
-        public string PersonName { get; set; } = string.Empty;
-        public string Reason { get; set; } = string.Empty;
-        public string AddedDate { get; set; } = string.Empty;
-    }
-
-    public class ArchivedPaymentItemDto
-    {
-        public int PaymentId { get; set; }
-        public int UnitId { get; set; }
-        public string ServiceName { get; set; } = string.Empty;
-        public string TotalFee { get; set; } = string.Empty;
-        public string PaymentDate { get; set; } = string.Empty;
-        public string PaymentMethod { get; set; } = string.Empty;
-    }
-
     // ══════════════════════════════════════════════════════════════
     //  Request DTOs
     // ══════════════════════════════════════════════════════════════
@@ -318,9 +287,6 @@ namespace StarComplexAPI.Controllers
             });
         }
 
-        // ══════════════════════════════════════════════════════════
-        //  حذف الموظف — بدون تعديل
-        // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id)
         {
@@ -351,16 +317,12 @@ namespace StarComplexAPI.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return StatusCode(500, new
-                {
-                    message = ex.Message,
-                    inner = ex.InnerException?.Message
-                });
+                return StatusCode(500, new { message = ex.Message, inner = ex.InnerException?.Message });
             }
         }
 
         // ══════════════════════════════════════════════════════════
-        //  Archived Employees — قائمة
+        //  Archived Employees — قائمة فقط
         // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archived")]
         public async Task<ActionResult> GetArchivedEmployees()
@@ -380,200 +342,6 @@ namespace StarComplexAPI.Controllers
                     full_name = $"{a.first_name} {a.second_name} {a.third_name}".Trim()
                 })
                 .ToListAsync());
-        }
-
-        // ══════════════════════════════════════════════════════════
-        //  تفاصيل الموظف المؤرشف
-        //  ✅ إذا employee_id موجود → بحث مباشر بالـ ID
-        //  ✅ إذا employee_id = NULL → بحث بالاسم للحصول على الـ ID
-        //     من جداول blacklist أو financial_payments
-        // ══════════════════════════════════════════════════════════
-        [HttpGet("employees/archived/{archiveId}/details")]
-        public async Task<ActionResult<ArchivedEmployeeDetailDto>> GetArchivedEmployeeDetails(int archiveId)
-        {
-            var archive = await _db.EmployeesArchive.FindAsync(archiveId);
-            if (archive == null) return NotFound(new { message = "السجل غير موجود" });
-
-            var blacklistRecords = new List<ArchivedBlacklistItemDto>();
-            var paymentRecords = new List<ArchivedPaymentItemDto>();
-
-            var conn = _db.Database.GetDbConnection();
-
-            try
-            {
-                await conn.OpenAsync();
-
-                // ── خطوة 1: حدد الـ empId المستخدم في البحث ──
-                // إذا employee_id موجود في الأرشيف استخدمه مباشرة
-                // إذا NULL ابحث عنه بالاسم في جدول blacklist أو financial_payments
-                int? resolvedEmpId = archive.employee_id;
-
-                if (!resolvedEmpId.HasValue)
-                {
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        // ابحث في blacklist أولاً عن موظف له نفس الاسم المحفوظ في الأرشيف
-                        // عن طريق ربط employees_archive بـ blacklist عبر الاسم
-                        cmd.CommandText = @"
-                            SELECT b.employee_id
-                            FROM blacklist b
-                            INNER JOIN employees e ON b.employee_id = e.employee_id
-                            WHERE TRIM(CONCAT(
-                                      COALESCE(e.first_name, ''), ' ',
-                                      COALESCE(e.second_name, ''), ' ',
-                                      COALESCE(e.third_name, '')
-                                  )) = TRIM(CONCAT(
-                                      COALESCE(@fn, ''), ' ',
-                                      COALESCE(@sn, ''), ' ',
-                                      COALESCE(@tn, '')
-                                  ))
-                            LIMIT 1";
-
-                        void AddP(string name, object? val)
-                        {
-                            var p = cmd.CreateParameter();
-                            p.ParameterName = name;
-                            p.Value = val ?? DBNull.Value;
-                            cmd.Parameters.Add(p);
-                        }
-
-                        AddP("@fn", archive.first_name);
-                        AddP("@sn", archive.second_name);
-                        AddP("@tn", archive.third_name);
-
-                        var result = await cmd.ExecuteScalarAsync();
-                        if (result != null && result != DBNull.Value)
-                            resolvedEmpId = Convert.ToInt32(result);
-                    }
-                }
-
-                if (!resolvedEmpId.HasValue)
-                {
-                    // جرب financial_payments إذا ما لقينا في blacklist
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-                            SELECT p.employee_id
-                            FROM financial_payments p
-                            INNER JOIN employees e ON p.employee_id = e.employee_id
-                            WHERE TRIM(CONCAT(
-                                      COALESCE(e.first_name, ''), ' ',
-                                      COALESCE(e.second_name, ''), ' ',
-                                      COALESCE(e.third_name, '')
-                                  )) = TRIM(CONCAT(
-                                      COALESCE(@fn, ''), ' ',
-                                      COALESCE(@sn, ''), ' ',
-                                      COALESCE(@tn, '')
-                                  ))
-                            LIMIT 1";
-
-                        void AddP(string name, object? val)
-                        {
-                            var p = cmd.CreateParameter();
-                            p.ParameterName = name;
-                            p.Value = val ?? DBNull.Value;
-                            cmd.Parameters.Add(p);
-                        }
-
-                        AddP("@fn", archive.first_name);
-                        AddP("@sn", archive.second_name);
-                        AddP("@tn", archive.third_name);
-
-                        var result = await cmd.ExecuteScalarAsync();
-                        if (result != null && result != DBNull.Value)
-                            resolvedEmpId = Convert.ToInt32(result);
-                    }
-                }
-
-                // ── خطوة 2: جلب السجلات بالـ ID المحدد ──
-                if (resolvedEmpId.HasValue)
-                {
-                    // ── القائمة السوداء ──
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-                            SELECT
-                                b.blacklist_id,
-                                COALESCE(b.person_name, '—')            AS person_name,
-                                COALESCE(b.reason, '—')                 AS reason,
-                                DATE_FORMAT(b.added_date, '%Y/%m/%d')   AS added_date
-                            FROM blacklist b
-                            WHERE b.employee_id = @empId
-                            ORDER BY b.added_date DESC";
-
-                        var p = cmd.CreateParameter();
-                        p.ParameterName = "@empId";
-                        p.Value = resolvedEmpId.Value;
-                        cmd.Parameters.Add(p);
-
-                        using var reader = await cmd.ExecuteReaderAsync();
-                        while (await reader.ReadAsync())
-                        {
-                            blacklistRecords.Add(new ArchivedBlacklistItemDto
-                            {
-                                BlacklistId = reader.GetInt32(0),
-                                PersonName = reader.GetString(1),
-                                Reason = reader.GetString(2),
-                                AddedDate = reader.GetString(3)
-                            });
-                        }
-                    }
-
-                    // ── السجلات المالية ──
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-                            SELECT
-                                p.payment_id,
-                                p.unit_id,
-                                COALESCE(s.service_name, '—')                   AS service_name,
-                                CONCAT(FORMAT(p.total_service_fee, 0), ' د.ع') AS total_fee,
-                                DATE_FORMAT(p.payment_date, '%Y/%m/%d')         AS payment_date,
-                                COALESCE(p.payment_method, '—')                 AS payment_method
-                            FROM financial_payments p
-                            LEFT JOIN financial_constants s ON p.service_id = s.service_id
-                            WHERE p.employee_id = @empId
-                            ORDER BY p.payment_date DESC";
-
-                        var p = cmd.CreateParameter();
-                        p.ParameterName = "@empId";
-                        p.Value = resolvedEmpId.Value;
-                        cmd.Parameters.Add(p);
-
-                        using var reader = await cmd.ExecuteReaderAsync();
-                        while (await reader.ReadAsync())
-                        {
-                            paymentRecords.Add(new ArchivedPaymentItemDto
-                            {
-                                PaymentId = reader.GetInt32(0),
-                                UnitId = reader.GetInt32(1),
-                                ServiceName = reader.GetString(2),
-                                TotalFee = reader.GetString(3),
-                                PaymentDate = reader.GetString(4),
-                                PaymentMethod = reader.GetString(5)
-                            });
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                await conn.CloseAsync();
-            }
-
-            return Ok(new ArchivedEmployeeDetailDto
-            {
-                ArchiveId = archive.archive_id,
-                EmployeeId = archive.employee_id,
-                FullName = string.Join(" ", new[]
-                                       { archive.first_name, archive.second_name, archive.third_name }
-                                       .Where(n => !string.IsNullOrWhiteSpace(n))),
-                JobTitle = archive.job_title ?? "—",
-                PhoneNumber = archive.phone_number ?? "—",
-                ArchivedAt = archive.archived_at.ToString("yyyy/MM/dd"),
-                BlacklistRecords = blacklistRecords,
-                PaymentRecords = paymentRecords
-            });
         }
 
         // ══════════════════════════════════════════════════════════
