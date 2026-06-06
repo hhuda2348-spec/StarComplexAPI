@@ -152,6 +152,9 @@ namespace StarComplexAPI.Controllers
 
         public AdminDashboardController(StarComplexContext db) => _db = db;
 
+        // ══════════════════════════════════════════════════════════
+        //  Dashboard KPI
+        // ══════════════════════════════════════════════════════════
         [HttpGet("full/{employeeId}")]
         public async Task<ActionResult<DashboardResponseDto>> GetFullDashboard(int employeeId)
         {
@@ -260,6 +263,9 @@ namespace StarComplexAPI.Controllers
             });
         }
 
+        // ══════════════════════════════════════════════════════════
+        //  Employees — CRUD
+        // ══════════════════════════════════════════════════════════
         [HttpGet("employees")]
         public async Task<ActionResult> GetEmployees()
         {
@@ -312,39 +318,86 @@ namespace StarComplexAPI.Controllers
             });
         }
 
-        // ✅ حذف الموظف — أرشفة ثم حذف من employees فقط
+        // ══════════════════════════════════════════════════════════
+        //  حذف الموظف — أرشفة ثم حذف من employees فقط
+        //  ✅ Transaction يضمن إن الأرشفة والحذف يتمان معاً أو لا شيء
+        // ══════════════════════════════════════════════════════════
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id)
         {
             var emp = await _db.Employees.FindAsync(id);
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
-            var archive = new EmployeeArchive
+            using var transaction = await _db.Database.BeginTransactionAsync();
+            try
             {
-                employee_id = emp.employee_id,
-                first_name = emp.first_name,
-                second_name = emp.second_name,
-                third_name = emp.third_name,
-                job_title = emp.job_title,
-                phone_number = emp.phone_number,
-                archived_at = DateTime.Now
-            };
-            _db.EmployeesArchive.Add(archive);
-            await _db.SaveChangesAsync();
+                // 1. انسخ بيانات الموظف للأرشيف
+                _db.EmployeesArchive.Add(new EmployeeArchive
+                {
+                    employee_id = emp.employee_id,
+                    first_name = emp.first_name,
+                    second_name = emp.second_name,
+                    third_name = emp.third_name,
+                    job_title = emp.job_title,
+                    phone_number = emp.phone_number,
+                    archived_at = DateTime.Now
+                });
+                await _db.SaveChangesAsync();
 
-            _db.Employees.Remove(emp);
-            await _db.SaveChangesAsync();
+                // 2. احذف من جدول employees فقط
+                //    السجلات المرتبطة (blacklist, financial_payments, security_logs)
+                //    تبقى كما هي — employee_id يصير NULL تلقائياً (ON DELETE SET NULL)
+                _db.Employees.Remove(emp);
+                await _db.SaveChangesAsync();
 
-            return Ok(new { message = "تم حذف الموظف وأرشفته بنجاح" });
+                await transaction.CommitAsync();
+                return Ok(new { message = "تم أرشفة الموظف بنجاح" });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new
+                {
+                    message = ex.Message,
+                    inner = ex.InnerException?.Message
+                });
+            }
         }
 
-        // ✅ تفاصيل الموظف المؤرشف — JOIN مع Blacklist و Payments
+        // ══════════════════════════════════════════════════════════
+        //  Archived Employees
+        // ══════════════════════════════════════════════════════════
+        [HttpGet("employees/archived")]
+        public async Task<ActionResult> GetArchivedEmployees()
+        {
+            return Ok(await _db.EmployeesArchive
+                .OrderByDescending(a => a.archived_at)
+                .Select(a => new
+                {
+                    a.archive_id,
+                    a.employee_id,
+                    a.first_name,
+                    a.second_name,
+                    a.third_name,
+                    a.job_title,
+                    a.phone_number,
+                    a.archived_at,
+                    full_name = $"{a.first_name} {a.second_name} {a.third_name}".Trim()
+                })
+                .ToListAsync());
+        }
+
+        // ══════════════════════════════════════════════════════════
+        //  تفاصيل الموظف المؤرشف — Blacklist + Payments
+        //  ✅ يستخدم employee_id المحفوظ في الأرشيف وقت الحذف
+        // ══════════════════════════════════════════════════════════
         [HttpGet("employees/archived/{archiveId}/details")]
         public async Task<ActionResult<ArchivedEmployeeDetailDto>> GetArchivedEmployeeDetails(int archiveId)
         {
             var archive = await _db.EmployeesArchive.FindAsync(archiveId);
             if (archive == null) return NotFound(new { message = "السجل غير موجود" });
 
+            // employee_id المحفوظ وقت الأرشفة — يبقى ثابتاً حتى بعد حذف الموظف
             var empId = archive.employee_id;
 
             var blacklistRecords = await _db.Blacklist
@@ -379,7 +432,7 @@ namespace StarComplexAPI.Controllers
             return Ok(new ArchivedEmployeeDetailDto
             {
                 ArchiveId = archive.archive_id,
-                EmployeeId = archive.employee_id,
+                EmployeeId = archive.employee_id ?? 0,
                 FullName = string.Join(" ", new[] { archive.first_name, archive.second_name, archive.third_name }
                                        .Where(n => !string.IsNullOrWhiteSpace(n))),
                 JobTitle = archive.job_title ?? "—",
@@ -390,26 +443,9 @@ namespace StarComplexAPI.Controllers
             });
         }
 
-        [HttpGet("employees/archived")]
-        public async Task<ActionResult> GetArchivedEmployees()
-        {
-            return Ok(await _db.EmployeesArchive
-                .OrderByDescending(a => a.archived_at)
-                .Select(a => new
-                {
-                    a.archive_id,
-                    a.employee_id,
-                    a.first_name,
-                    a.second_name,
-                    a.third_name,
-                    a.job_title,
-                    a.phone_number,
-                    a.archived_at,
-                    full_name = $"{a.first_name} {a.second_name} {a.third_name}".Trim()
-                })
-                .ToListAsync());
-        }
-
+        // ══════════════════════════════════════════════════════════
+        //  Blacklist — CRUD
+        // ══════════════════════════════════════════════════════════
         [HttpGet("blacklist")]
         public async Task<ActionResult> GetBlacklist()
         {
@@ -456,6 +492,9 @@ namespace StarComplexAPI.Controllers
             return Ok(new { message = "تم حذف السجل من القائمة السوداء" });
         }
 
+        // ══════════════════════════════════════════════════════════
+        //  Residents / Visits / Maintenance
+        // ══════════════════════════════════════════════════════════
         [HttpPost("add-resident")]
         public async Task<ActionResult> AddResident([FromBody] AddResidentRequest req)
         {
@@ -520,6 +559,9 @@ namespace StarComplexAPI.Controllers
         public async Task<ActionResult> GetAvailableUnits()
             => Ok(await _db.HousingUnits.Where(u => u.unit_status == "فارغ").ToListAsync());
 
+        // ══════════════════════════════════════════════════════════
+        //  Helper Methods
+        // ══════════════════════════════════════════════════════════
         private static string? NullIfEmpty(string? s)
             => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
