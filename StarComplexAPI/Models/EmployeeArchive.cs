@@ -12,7 +12,7 @@ namespace StarComplexAPI.Models
 
         // ✅ مطابق للكنترولر: emp.employee_id
         [Column("employee_id")]
-        public int employee_id { get; set; }
+        public int? employee_id { get; set; }
 
         [Column("first_name")]
         [StringLength(100)]
