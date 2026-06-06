@@ -62,13 +62,40 @@ namespace StarComplexAPI.Controllers
         public List<DashboardMaintenanceItemDto> RecentMaintenance { get; set; } = new();
     }
 
+    // ── DTOs تفاصيل الموظف المؤرشف ──
+    public class ArchivedEmployeeDetailDto
+    {
+        public int ArchiveId { get; set; }
+        public int EmployeeId { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string JobTitle { get; set; } = string.Empty;
+        public string PhoneNumber { get; set; } = string.Empty;
+        public string ArchivedAt { get; set; } = string.Empty;
+        public List<ArchivedBlacklistItemDto> BlacklistRecords { get; set; } = new();
+        public List<ArchivedPaymentItemDto> PaymentRecords { get; set; } = new();
+    }
+
+    public class ArchivedBlacklistItemDto
+    {
+        public int BlacklistId { get; set; }
+        public string PersonName { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public string AddedDate { get; set; } = string.Empty;
+    }
+
+    public class ArchivedPaymentItemDto
+    {
+        public int PaymentId { get; set; }
+        public int UnitId { get; set; }
+        public string ServiceName { get; set; } = string.Empty;
+        public string TotalFee { get; set; } = string.Empty;
+        public string PaymentDate { get; set; } = string.Empty;
+        public string PaymentMethod { get; set; } = string.Empty;
+    }
+
     // ══════════════════════════════════════════════════════════════
     //  Request DTOs
     // ══════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// إضافة للقائمة السوداء — PersonName*, EmployeeId*, Reason (اختياري)
-    /// </summary>
     public class AddBlacklistRequest
     {
         public string PersonName { get; set; } = string.Empty;
@@ -76,9 +103,6 @@ namespace StarComplexAPI.Controllers
         public string? Reason { get; set; }
     }
 
-    /// <summary>
-    /// إضافة موظف — EmployeeCode*, FirstName*, وباقي الحقول اختيارية
-    /// </summary>
     public class AddEmployeeRequest
     {
         public string EmployeeCode { get; set; } = string.Empty;
@@ -128,7 +152,6 @@ namespace StarComplexAPI.Controllers
 
         public AdminDashboardController(StarComplexContext db) => _db = db;
 
-        // ── Dashboard كامل ──
         [HttpGet("full/{employeeId}")]
         public async Task<ActionResult<DashboardResponseDto>> GetFullDashboard(int employeeId)
         {
@@ -176,9 +199,7 @@ namespace StarComplexAPI.Controllers
 
             var serviceMap = await _db.FinancialConstants
                 .ToDictionaryAsync<FinancialConstant, int, string>(
-                    s => s.service_id,
-                    s => s.service_name ?? string.Empty
-                );
+                    s => s.service_id, s => s.service_name ?? string.Empty);
 
             var recentPaymentsRaw = await _db.FinancialPayments
                 .OrderByDescending(p => p.payment_date).Take(10).ToListAsync();
@@ -187,9 +208,7 @@ namespace StarComplexAPI.Controllers
             {
                 PaymentId = $"#{p.payment_id}",
                 UnitId = p.unit_id.ToString(),
-                ServiceName = p.service_id is int pSid
-                    ? serviceMap.GetValueOrDefault(pSid, "—")
-                    : "—",
+                ServiceName = p.service_id is int pSid ? serviceMap.GetValueOrDefault(pSid, "—") : "—",
                 TotalFeeRaw = (decimal)p.total_service_fee,
                 TotalFee = ((decimal)p.total_service_fee).ToString("N0") + " د.ع",
                 PaymentDateRaw = p.payment_date,
@@ -204,9 +223,7 @@ namespace StarComplexAPI.Controllers
             {
                 RequestId = $"#{m.request_id}",
                 UnitId = m.unit_id.ToString(),
-                ServiceName = m.service_id is int mSid
-                    ? serviceMap.GetValueOrDefault(mSid, "—")
-                    : "—",
+                ServiceName = m.service_id is int mSid ? serviceMap.GetValueOrDefault(mSid, "—") : "—",
                 RequestDateRaw = m.request_date,
                 RequestDate = m.request_date.ToString("yyyy/MM/dd"),
                 Status = m.request_status ?? "غير محدد",
@@ -242,10 +259,6 @@ namespace StarComplexAPI.Controllers
                 RecentMaintenance = recentMaintenance
             });
         }
-
-        // ══════════════════════════════════════════════════════════
-        //  الموظفون
-        // ══════════════════════════════════════════════════════════
 
         [HttpGet("employees")]
         public async Task<ActionResult> GetEmployees()
@@ -295,20 +308,17 @@ namespace StarComplexAPI.Controllers
                 employee_id = emp.employee_id,
                 employee_code = emp.employee_code,
                 full_name = string.Join(" ", new[] { emp.first_name, emp.second_name, emp.third_name }
-                                  .Where(n => !string.IsNullOrWhiteSpace(n)))
+                                    .Where(n => !string.IsNullOrWhiteSpace(n)))
             });
         }
 
-        // ══════════════════════════════════════════════════════════
-        //  حذف الموظف مع الأرشفة التلقائية
-        // ══════════════════════════════════════════════════════════
+        // ✅ حذف الموظف — أرشفة ثم حذف من employees فقط
         [HttpDelete("employees/{id}")]
         public async Task<ActionResult> DeleteEmployee(int id)
         {
             var emp = await _db.Employees.FindAsync(id);
             if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
 
-            // ✅ أرشف الموظف قبل الحذف
             var archive = new EmployeeArchive
             {
                 employee_id = emp.employee_id,
@@ -320,17 +330,66 @@ namespace StarComplexAPI.Controllers
                 archived_at = DateTime.Now
             };
             _db.EmployeesArchive.Add(archive);
+            await _db.SaveChangesAsync();
 
-            // ✅ ثم احذف الموظف
             _db.Employees.Remove(emp);
             await _db.SaveChangesAsync();
 
             return Ok(new { message = "تم حذف الموظف وأرشفته بنجاح" });
         }
 
-        // ══════════════════════════════════════════════════════════
-        //  الموظفون المؤرشفون
-        // ══════════════════════════════════════════════════════════
+        // ✅ تفاصيل الموظف المؤرشف — JOIN مع Blacklist و Payments
+        [HttpGet("employees/archived/{archiveId}/details")]
+        public async Task<ActionResult<ArchivedEmployeeDetailDto>> GetArchivedEmployeeDetails(int archiveId)
+        {
+            var archive = await _db.EmployeesArchive.FindAsync(archiveId);
+            if (archive == null) return NotFound(new { message = "السجل غير موجود" });
+
+            var empId = archive.employee_id;
+
+            var blacklistRecords = await _db.Blacklist
+                .Where(b => b.employee_id == empId)
+                .Select(b => new ArchivedBlacklistItemDto
+                {
+                    BlacklistId = b.blacklist_id,
+                    PersonName = b.person_name ?? "—",
+                    Reason = b.reason ?? "—",
+                    AddedDate = b.added_date.ToString("yyyy/MM/dd")
+                })
+                .ToListAsync();
+
+            var paymentRecords = await (
+                from p in _db.FinancialPayments
+                where p.employee_id == empId
+                join s in _db.FinancialConstants
+                    on p.service_id equals s.service_id into sGroup
+                from s in sGroup.DefaultIfEmpty()
+                orderby p.payment_date descending
+                select new ArchivedPaymentItemDto
+                {
+                    PaymentId = p.payment_id,
+                    UnitId = p.unit_id,
+                    ServiceName = s != null ? s.service_name : "—",
+                    TotalFee = ((decimal)p.total_service_fee).ToString("N0") + " د.ع",
+                    PaymentDate = p.payment_date.ToString("yyyy/MM/dd"),
+                    PaymentMethod = p.payment_method ?? "—"
+                }
+            ).ToListAsync();
+
+            return Ok(new ArchivedEmployeeDetailDto
+            {
+                ArchiveId = archive.archive_id,
+                EmployeeId = archive.employee_id,
+                FullName = string.Join(" ", new[] { archive.first_name, archive.second_name, archive.third_name }
+                                       .Where(n => !string.IsNullOrWhiteSpace(n))),
+                JobTitle = archive.job_title ?? "—",
+                PhoneNumber = archive.phone_number ?? "—",
+                ArchivedAt = archive.archived_at.ToString("yyyy/MM/dd"),
+                BlacklistRecords = blacklistRecords,
+                PaymentRecords = paymentRecords
+            });
+        }
+
         [HttpGet("employees/archived")]
         public async Task<ActionResult> GetArchivedEmployees()
         {
@@ -350,10 +409,6 @@ namespace StarComplexAPI.Controllers
                 })
                 .ToListAsync());
         }
-
-        // ══════════════════════════════════════════════════════════
-        //  القائمة السوداء
-        // ══════════════════════════════════════════════════════════
 
         [HttpGet("blacklist")]
         public async Task<ActionResult> GetBlacklist()
@@ -388,11 +443,7 @@ namespace StarComplexAPI.Controllers
             _db.Blacklist.Add(b);
             await _db.SaveChangesAsync();
 
-            return Ok(new
-            {
-                message = "تمت إضافة الشخص للقائمة السوداء بنجاح",
-                blacklist_id = b.blacklist_id
-            });
+            return Ok(new { message = "تمت إضافة الشخص للقائمة السوداء بنجاح", blacklist_id = b.blacklist_id });
         }
 
         [HttpDelete("blacklist/{id}")]
@@ -400,16 +451,10 @@ namespace StarComplexAPI.Controllers
         {
             var b = await _db.Blacklist.FindAsync(id);
             if (b == null) return NotFound(new { message = "السجل غير موجود" });
-
             _db.Blacklist.Remove(b);
             await _db.SaveChangesAsync();
-
             return Ok(new { message = "تم حذف السجل من القائمة السوداء" });
         }
-
-        // ══════════════════════════════════════════════════════════
-        //  السكان
-        // ══════════════════════════════════════════════════════════
 
         [HttpPost("add-resident")]
         public async Task<ActionResult> AddResident([FromBody] AddResidentRequest req)
@@ -432,13 +477,8 @@ namespace StarComplexAPI.Controllers
             _db.Residents.Add(res);
             unit.unit_status = "مشغول";
             await _db.SaveChangesAsync();
-
             return Ok(new { message = "تم التسكين بنجاح", resident_code = res.resident_code });
         }
-
-        // ══════════════════════════════════════════════════════════
-        //  الزيارات
-        // ══════════════════════════════════════════════════════════
 
         [HttpGet("pending-visits")]
         public async Task<ActionResult> GetPendingVisits()
@@ -450,17 +490,11 @@ namespace StarComplexAPI.Controllers
         {
             var visit = await _db.Visits.FindAsync(req.VisitId);
             if (visit == null) return NotFound(new { message = "الزيارة غير موجودة" });
-
             visit.visit_status = req.NewStatus;
             if (req.ExpiryDate.HasValue) visit.expiry_date = req.ExpiryDate.Value;
-
             await _db.SaveChangesAsync();
             return Ok(new { message = "تم تحديث حالة الزيارة" });
         }
-
-        // ══════════════════════════════════════════════════════════
-        //  الصيانة
-        // ══════════════════════════════════════════════════════════
 
         [HttpPost("create-maintenance")]
         public async Task<ActionResult> CreateMaintenance([FromBody] CreateMaintenanceRequest req)
@@ -473,16 +507,10 @@ namespace StarComplexAPI.Controllers
                 request_status = req.RequestStatus ?? "مفتوح",
                 feedback = req.Feedback
             };
-
             _db.MaintenanceRequests.Add(m);
             await _db.SaveChangesAsync();
-
             return Ok(new { message = "تم إنشاء طلب الصيانة", request_id = m.request_id });
         }
-
-        // ══════════════════════════════════════════════════════════
-        //  الخدمات والوحدات
-        // ══════════════════════════════════════════════════════════
 
         [HttpGet("services")]
         public async Task<ActionResult> GetServices()
@@ -492,9 +520,6 @@ namespace StarComplexAPI.Controllers
         public async Task<ActionResult> GetAvailableUnits()
             => Ok(await _db.HousingUnits.Where(u => u.unit_status == "فارغ").ToListAsync());
 
-        // ══════════════════════════════════════════════════════════
-        //  مساعد
-        // ══════════════════════════════════════════════════════════
         private static string? NullIfEmpty(string? s)
             => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
