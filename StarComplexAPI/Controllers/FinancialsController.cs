@@ -315,6 +315,92 @@ namespace StarComplexAPI.Controllers
         }
 
         // ═══════════════════════════════════════════════════════════════
+        // GET /api/Financials/payments
+        // يعرض جميع المدفوعات المسجّلة مع بيانات الموظف والخدمة
+        // ═══════════════════════════════════════════════════════════════
+        [HttpGet("payments")]
+        public async Task<ActionResult<List<PaymentHistoryDto>>> GetPayments(
+            [FromQuery] int? unitId,
+            [FromQuery] int? serviceId,
+            [FromQuery] string? method,
+            [FromQuery] string? from,
+            [FromQuery] string? to)
+        {
+            try
+            {
+                var query = from p in _context.FinancialPayments
+                            join e in _context.Employees
+                                on p.employee_id equals e.employee_id into empGroup
+                            from emp in empGroup.DefaultIfEmpty()
+                            join s in _context.FinancialConstants
+                                on p.service_id equals s.service_id into svcGroup
+                            from svc in svcGroup.DefaultIfEmpty()
+                            select new
+                            {
+                                p.payment_id,
+                                p.unit_id,
+                                p.service_id,
+                                ServiceName = svc != null ? svc.service_name : "غير محدد",
+                                p.total_service_fee,
+                                p.payment_method,
+                                p.accont_received,
+                                p.payment_date,
+                                EmployeeName = emp != null
+                                    ? ((emp.first_name ?? "") + " " +
+                                       (emp.second_name ?? "") + " " +
+                                       (emp.third_name ?? "")).Trim()
+                                    : "غير محدد",
+                                EmployeeTitle = emp != null ? emp.job_title : null
+                            };
+
+                // ── فلترة اختيارية ──────────────────────────────────
+                if (unitId.HasValue)
+                    query = query.Where(p => p.unit_id == unitId.Value);
+
+                if (serviceId.HasValue)
+                    query = query.Where(p => p.service_id == serviceId.Value);
+
+                if (!string.IsNullOrWhiteSpace(method))
+                    query = query.Where(p => p.payment_method == method);
+
+                if (DateTime.TryParse(from, out var fromDate))
+                    query = query.Where(p => p.payment_date >= fromDate);
+
+                if (DateTime.TryParse(to, out var toDate))
+                    query = query.Where(p => p.payment_date <= toDate.AddDays(1).AddSeconds(-1));
+
+                var results = await query
+                    .OrderByDescending(p => p.payment_date)
+                    .Select(p => new PaymentHistoryDto
+                    {
+                        PaymentId = p.payment_id,
+                        UnitId = p.unit_id,
+                        ServiceId = p.service_id ?? 0,
+                        ServiceName = p.ServiceName,
+                        Amount = $"{p.total_service_fee:N0} IQD",
+                        AmountRaw = p.total_service_fee ?? 0,
+                        PaymentMethod = p.payment_method,
+                        AccountReceived = p.accont_received == 1m ? "الكهرباء"
+                                        : p.accont_received == 2m ? "الانترنت"
+                                        : "الادارة",
+                        PaymentDate = p.payment_date.ToString("yyyy-MM-dd"),
+                        PaymentMonth = p.payment_date.Month,
+                        PaymentYear = p.payment_date.Year,
+                        EmployeeName = p.EmployeeName,
+                        EmployeeTitle = p.EmployeeTitle ?? "موظف"
+                    })
+                    .ToListAsync();
+
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetPayments");
+                return StatusCode(500, new { message = "خطأ في جلب المدفوعات", details = ex.Message });
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
         // POST /api/Financials/register
         // ═══════════════════════════════════════════════════════════════
         [HttpPost("register")]
@@ -477,6 +563,24 @@ namespace StarComplexAPI.Controllers
         [JsonPropertyName("feedback")] public string Feedback { get; set; } = string.Empty;
         [JsonPropertyName("month")] public int Month { get; set; }
         [JsonPropertyName("year")] public int Year { get; set; }
+    }
+
+    // ── DTO جديد: سجل دفعة كاملة ────────────────────────────────────
+    public class PaymentHistoryDto
+    {
+        [JsonPropertyName("paymentId")] public int PaymentId { get; set; }
+        [JsonPropertyName("unitId")] public int UnitId { get; set; }
+        [JsonPropertyName("serviceId")] public int ServiceId { get; set; }
+        [JsonPropertyName("serviceName")] public string ServiceName { get; set; } = string.Empty;
+        [JsonPropertyName("amount")] public string Amount { get; set; } = "0 IQD";
+        [JsonPropertyName("amountRaw")] public decimal AmountRaw { get; set; }
+        [JsonPropertyName("paymentMethod")] public string PaymentMethod { get; set; } = string.Empty;
+        [JsonPropertyName("accountReceived")] public string AccountReceived { get; set; } = string.Empty;
+        [JsonPropertyName("paymentDate")] public string PaymentDate { get; set; } = string.Empty;
+        [JsonPropertyName("paymentMonth")] public int PaymentMonth { get; set; }
+        [JsonPropertyName("paymentYear")] public int PaymentYear { get; set; }
+        [JsonPropertyName("employeeName")] public string EmployeeName { get; set; } = "—";
+        [JsonPropertyName("employeeTitle")] public string EmployeeTitle { get; set; } = string.Empty;
     }
 
     public class RegisterPaymentDto
